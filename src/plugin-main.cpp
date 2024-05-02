@@ -35,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QMessageBox>
 #include <QString>
 #include <QStringList>
+#include "ptz_presets_dock.h"
 
 #include "plugin-main.h"
 #include "main-output.h"
@@ -169,9 +170,7 @@ bool obs_module_load(void)
 		output_settings = new OutputSettings(main_window);
 		obs_frontend_pop_ui_translation();
 
-		auto menu_cb = [] {
-			output_settings->ToggleShowHide();
-		};
+		auto menu_cb = [] { output_settings->ToggleShowHide(); };
 		menu_action->connect(menu_action, &QAction::triggered, menu_cb);
 
 		obs_frontend_add_event_callback(
@@ -207,6 +206,8 @@ bool obs_module_load(void)
 				}
 			},
 			static_cast<void *>(conf));
+
+		ptz_presets_init(ndiLib);
 	}
 
 	return true;
@@ -277,11 +278,6 @@ const NDIlib_v4 *load_ndilib()
 					     "[obs-ndi] load_ndilib: ERROR: NDIlib_v5_load not found in loaded library");
 				}
 			} else {
-				blog(LOG_ERROR,
-				     "[obs-ndi] load_ndilib: ERROR: QLibrary returned the following error: '%s'",
-				     loaded_lib->errorString()
-					     .toUtf8()
-					     .constData());
 				delete loaded_lib;
 				loaded_lib = nullptr;
 			}
