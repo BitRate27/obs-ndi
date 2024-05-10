@@ -35,6 +35,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QMessageBox>
 #include <QString>
 #include <QStringList>
+#include "ptz_presets_dock.h"
 
 #include "plugin-main.h"
 #include "main-output.h"
@@ -207,6 +208,8 @@ bool obs_module_load(void)
 				}
 			},
 			static_cast<void *>(conf));
+			
+		ptz_presets_init(ndiLib);
 	}
 
 	return true;

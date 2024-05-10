@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "plugin-main.h"
 #include "Config.h"
+#include "ptz_presets_dock.h"
 
 #define PROP_SOURCE "ndi_source_name"
 #define PROP_BANDWIDTH "ndi_bw_mode"
@@ -654,6 +655,18 @@ void *ndi_source_thread(void *data)
 			     config_most_recent.tally.on_program);
 			ndiLib->recv_set_tally(ndi_receiver,
 					       &config_most_recent.tally);
+			
+			// Change the ndi_receiver associated with the ptz_presets dock
+			// if this source is not on_program
+			if (config_most_recent.ptz.enabled &&
+			    config_most_recent.tally.on_preview &&
+			    !config_most_recent.tally.on_program) {
+				ptz_presets_set_recv(ndi_receiver,config_most_recent.ndi_source_name.constData());
+			} else if (!config_most_recent.ptz.enabled || 
+						(config_most_recent.tally.on_preview &&
+						 config_most_recent.tally.on_program)) {
+				ptz_presets_set_recv(nullptr, "");
+			}
 		}
 
 		if (ndi_frame_sync) {
