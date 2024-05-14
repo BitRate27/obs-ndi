@@ -75,6 +75,9 @@ typedef struct {
 	float pan;
 	float tilt;
 	float zoom;
+	bool supported;
+	bool on_program;
+	bool on_preview;
 } ptz_t;
 
 typedef struct {
@@ -612,6 +615,34 @@ void *ndi_source_thread(void *data)
 						   &hwAccelMetadata);
 		}
 
+		// Change the ndi_receiver associated with the ptz_presets dock
+		// if this source is not on_program
+		if (config_most_recent.ptz.on_preview !=
+			    config_last_used.ptz.on_preview ||
+		    config_most_recent.ptz.on_program !=
+			    config_last_used.ptz.on_program ||
+		    config_most_recent.ptz.enabled !=
+			    config_last_used.ptz.enabled) {
+
+			config_last_used.ptz = config_most_recent.ptz;
+			blog(LOG_INFO,
+			     "[obs-ndi] ndi_source_thread: '%s' ptz changed; Sending ptz on_preview=%d, on_program=%d",
+			     obs_source_ndi_receiver_name,
+			     config_most_recent.ptz.on_preview,
+			     config_most_recent.ptz.on_program);
+
+			if (config_most_recent.ptz.enabled &&
+			    config_most_recent.ptz.on_preview &&
+			    !config_most_recent.ptz.on_program) {
+			
+				ptz_presets_set_recv(
+					ndi_receiver,
+					config_most_recent.ndi_source_name
+						.constData());
+			} else
+				ptz_presets_set_recv(nullptr, "");
+		}
+
 		if (config_most_recent.ptz.enabled) {
 			const static float tollerance = 0.001f;
 			if (fabs(config_most_recent.ptz.pan -
@@ -655,18 +686,6 @@ void *ndi_source_thread(void *data)
 			     config_most_recent.tally.on_program);
 			ndiLib->recv_set_tally(ndi_receiver,
 					       &config_most_recent.tally);
-			
-			// Change the ndi_receiver associated with the ptz_presets dock
-			// if this source is not on_program
-			if (config_most_recent.ptz.enabled &&
-			    config_most_recent.tally.on_preview &&
-			    !config_most_recent.tally.on_program) {
-				ptz_presets_set_recv(ndi_receiver,config_most_recent.ndi_source_name.constData());
-			} else if (!config_most_recent.ptz.enabled || 
-						(config_most_recent.tally.on_preview &&
-						 config_most_recent.tally.on_program)) {
-				ptz_presets_set_recv(nullptr, "");
-			}
 		}
 
 		if (ndi_frame_sync) {
@@ -732,6 +751,16 @@ void *ndi_source_thread(void *data)
 					obs_source, &obs_video_frame);
 				ndiLib->recv_free_video_v2(ndi_receiver,
 							   &video_frame2);
+				continue;
+			}
+
+			if (frame_received == NDIlib_frame_type_status_change) {
+				s->config.ptz.supported =
+					ndiLib->recv_ptz_is_supported(
+						ndi_receiver);
+				blog(LOG_INFO,
+				     "[obs-ndi] ndi_source_thread: ptz supported = %d",
+				     s->config.ptz.supported);
 				continue;
 			}
 		}
@@ -981,6 +1010,10 @@ void ndi_source_update(void *data, obs_data_t *settings)
 	config.tally.on_program = conf->TallyProgramEnabled &&
 				  obs_source_active(obs_source);
 
+	// Update ptz as far as where this source is shown
+	config.ptz.on_preview = obs_source_showing(obs_source);
+	config.ptz.on_program = obs_source_active(obs_source);
+
 	s->config = config;
 
 	if (!config.ndi_source_name.isEmpty()) {
@@ -1000,6 +1033,7 @@ void ndi_source_shown(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_shown('%s'...)", name);
 	s->config.tally.on_preview = (Config::Current())->TallyPreviewEnabled;
+	s->config.ptz.on_preview = true;
 }
 
 void ndi_source_hidden(void *data)
@@ -1008,6 +1042,7 @@ void ndi_source_hidden(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_hidden('%s'...)", name);
 	s->config.tally.on_preview = false;
+	s->config.ptz.on_preview = false;
 }
 
 void ndi_source_activated(void *data)
@@ -1016,6 +1051,7 @@ void ndi_source_activated(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_activated('%s'...)", name);
 	s->config.tally.on_program = (Config::Current())->TallyProgramEnabled;
+	s->config.ptz.on_program = true;
 }
 
 void ndi_source_deactivated(void *data)
@@ -1024,6 +1060,7 @@ void ndi_source_deactivated(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_deactivated('%s'...)", name);
 	s->config.tally.on_program = false;
+	s->config.ptz.on_program = false;
 }
 
 void ndi_source_renamed(void *data, calldata_t *)

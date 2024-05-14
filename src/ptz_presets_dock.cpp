@@ -2,6 +2,7 @@
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <qpushbutton.h>
+#include <qgridlayout.h>
 #include <qlabel.h>
 #include "ptz_presets_dock.h"
 #include <chrono>
@@ -18,6 +19,7 @@ public:
 		  index(index_)
 	{
 		this->setText(QString::asprintf("Preset %d", index));
+		this->setGeometry(0, 0, 50, 50);
 		QObject::connect(this, &QPushButton::clicked, this,
 				 &PresetButton::PresetButtonClicked);
 	}
@@ -51,7 +53,7 @@ void ptz_presets_set_recv(NDIlib_recv_instance_t recv, const char *ndiname)
 {
 	context->current_recv = recv;
 	context->label->setText(ndiname);
-	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_recv %s",ndiname);
+	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_recv [%s]",ndiname);
 }
 
 void *ptz_presets_thread(void *data)
@@ -87,30 +89,29 @@ void ptz_presets_thread_stop(ptz_presets_dock *s)
 
 void ptz_presets_init(const NDIlib_v4 *ndiLib)
 {
-	int x1;
-	int y1;
-
-	if (context)
+;	if (context)
 		return;
 
 	context = (ptz_presets_dock *)bzalloc(sizeof(ptz_presets_dock));
 	context->ndiLib = ndiLib;
 	context->dialog = new QWidget();
-	context->buttons = (PresetButton **)bzalloc(sizeof(PresetButton *)*9);
-	context->label = new QLabel(context->dialog); 
+	context->label = new QLabel(context->dialog);
 	context->label->setText("No PTZ NDI source previewed");
 	context->label->setGeometry(0, 0, 300, 20);
-	QRect lGeom = context->label->geometry();
-	y1 = lGeom.height()+2;
-	x1 = 2;
-	for (int b=0; b<9; b++)
-	{
-		context->buttons[b] = new PresetButton(context->dialog, b+1);
-		QRect geometry = context->buttons[b]->geometry();
-		geometry.setTop(y1);
-		y1 += 35;
-		context->buttons[b]->setGeometry(geometry);
+
+	context->buttons = (PresetButton **)bzalloc(sizeof(PresetButton *) * 9);
+	QGridLayout *gridLayout = new QGridLayout;
+
+	for (int i = 0; i < 3; ++i) {
+		for (int j = 0; j < 3; ++j) {
+			context->buttons[i * 3 + j] = new PresetButton(
+				context->dialog, i * 3 + j + 1);
+			gridLayout->addWidget(context->buttons[i * 3 + j], i,
+					      j);
+		}
 	}
+	context->dialog->setLayout(gridLayout);
+	
 	context->button_pressed = -1;
 	context->running = false;
 	obs_frontend_add_dock_by_id("Preview PTZ Presets",
