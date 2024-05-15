@@ -558,6 +558,24 @@ void *ndi_source_thread(void *data)
 				break;
 			}
 
+			s->config.ptz.supported =
+				ndiLib->recv_ptz_is_supported(ndi_receiver);
+			blog(LOG_INFO,
+			     "[obs-ndi] ndi_source_thread: ptz supported = %d",
+			     s->config.ptz.supported);
+			if (s->config.ptz.supported) {
+				const char *p_url =
+					ndiLib->recv_get_web_control(
+						ndi_receiver);
+				if (p_url) {
+					blog(LOG_INFO,
+					     "[obs-ndi] ndi_source_thread: ptz url = %s",
+					     p_url);
+					ndiLib->recv_free_string(ndi_receiver,
+								 p_url);
+				}
+			}
+
 			if (config_most_recent.framesync_enabled) {
 				timestamp_audio = 0;
 				timestamp_video = 0;
@@ -751,16 +769,6 @@ void *ndi_source_thread(void *data)
 					obs_source, &obs_video_frame);
 				ndiLib->recv_free_video_v2(ndi_receiver,
 							   &video_frame2);
-				continue;
-			}
-
-			if (frame_received == NDIlib_frame_type_status_change) {
-				s->config.ptz.supported =
-					ndiLib->recv_ptz_is_supported(
-						ndi_receiver);
-				blog(LOG_INFO,
-				     "[obs-ndi] ndi_source_thread: ptz supported = %d",
-				     s->config.ptz.supported);
 				continue;
 			}
 		}

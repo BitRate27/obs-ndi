@@ -19,7 +19,8 @@ public:
 		  index(index_)
 	{
 		this->setText(QString::asprintf("Preset %d", index));
-		this->setGeometry(0, 0, 50, 50);
+		this->setSizePolicy(QSizePolicy::Expanding,
+				    QSizePolicy::Expanding);
 		QObject::connect(this, &QPushButton::clicked, this,
 				 &PresetButton::PresetButtonClicked);
 	}
@@ -95,22 +96,29 @@ void ptz_presets_init(const NDIlib_v4 *ndiLib)
 	context = (ptz_presets_dock *)bzalloc(sizeof(ptz_presets_dock));
 	context->ndiLib = ndiLib;
 	context->dialog = new QWidget();
-	context->label = new QLabel(context->dialog);
-	context->label->setText("No PTZ NDI source previewed");
-	context->label->setGeometry(0, 0, 300, 20);
+
+	QVBoxLayout *vbox = new QVBoxLayout(context->dialog);
+
+	context->label = new QLabel("No PTZ NDI source previewed");
+	context->label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+	vbox->addWidget(context->label);
+
+	QGridLayout *grid = new QGridLayout();
+	vbox->addLayout(grid);
 
 	context->buttons = (PresetButton **)bzalloc(sizeof(PresetButton *) * 9);
-	QGridLayout *gridLayout = new QGridLayout;
 
 	for (int i = 0; i < 3; ++i) {
 		for (int j = 0; j < 3; ++j) {
-			context->buttons[i * 3 + j] = new PresetButton(
-				context->dialog, i * 3 + j + 1);
-			gridLayout->addWidget(context->buttons[i * 3 + j], i,
+			int ndx = i * 3 + j;
+			context->buttons[ndx] = new PresetButton(
+				context->dialog, ndx + 1);
+			grid->addWidget(context->buttons[ndx], i,
 					      j);
 		}
 	}
-	context->dialog->setLayout(gridLayout);
+	context->dialog->setLayout(grid);
 	
 	context->button_pressed = -1;
 	context->running = false;
