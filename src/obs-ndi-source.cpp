@@ -30,7 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "plugin-main.h"
 #include "Config.h"
-#include "ptz_presets_dock.h"
+#include "ptz-presets-dock.h"
 
 #define PROP_SOURCE "ndi_source_name"
 #define PROP_BANDWIDTH "ndi_bw_mode"
@@ -75,7 +75,6 @@ typedef struct {
 	float pan;
 	float tilt;
 	float zoom;
-	bool supported;
 	bool on_program;
 	bool on_preview;
 } ptz_t;
@@ -558,24 +557,6 @@ void *ndi_source_thread(void *data)
 				break;
 			}
 
-			s->config.ptz.supported =
-				ndiLib->recv_ptz_is_supported(ndi_receiver);
-			blog(LOG_INFO,
-			     "[obs-ndi] ndi_source_thread: ptz supported = %d",
-			     s->config.ptz.supported);
-			if (s->config.ptz.supported) {
-				const char *p_url =
-					ndiLib->recv_get_web_control(
-						ndi_receiver);
-				if (p_url) {
-					blog(LOG_INFO,
-					     "[obs-ndi] ndi_source_thread: ptz url = %s",
-					     p_url);
-					ndiLib->recv_free_string(ndi_receiver,
-								 p_url);
-				}
-			}
-
 			if (config_most_recent.framesync_enabled) {
 				timestamp_audio = 0;
 				timestamp_video = 0;
@@ -633,33 +614,12 @@ void *ndi_source_thread(void *data)
 						   &hwAccelMetadata);
 		}
 
-		// Change the ndi_receiver associated with the ptz_presets dock
-		// if this source is not on_program
-		if (config_most_recent.ptz.on_preview !=
-			    config_last_used.ptz.on_preview ||
-		    config_most_recent.ptz.on_program !=
-			    config_last_used.ptz.on_program ||
-		    config_most_recent.ptz.enabled !=
-			    config_last_used.ptz.enabled) {
-
-			config_last_used.ptz = config_most_recent.ptz;
-			blog(LOG_INFO,
-			     "[obs-ndi] ndi_source_thread: '%s' ptz changed; Sending ptz on_preview=%d, on_program=%d",
-			     obs_source_ndi_receiver_name,
-			     config_most_recent.ptz.on_preview,
-			     config_most_recent.ptz.on_program);
-
-			if (config_most_recent.ptz.enabled &&
-			    config_most_recent.ptz.on_preview &&
-			    !config_most_recent.ptz.on_program) {
-			
-				ptz_presets_set_recv(
-					ndi_receiver,
-					config_most_recent.ndi_source_name
-						.constData());
-			} else
-				ptz_presets_set_recv(nullptr, "");
-		}
+        // Change the ndi_receiver associated with the ptz-presets-dock
+		// if this source is on_preview and is not on_program otherwise 
+		// turn off ptz-presets-dock.
+		ptz_presets_set_recv(
+			obs_source, ndi_receiver,
+			config_most_recent.ndi_source_name.constData());
 
 		if (config_most_recent.ptz.enabled) {
 			const static float tollerance = 0.001f;
@@ -769,6 +729,14 @@ void *ndi_source_thread(void *data)
 					obs_source, &obs_video_frame);
 				ndiLib->recv_free_video_v2(ndi_receiver,
 							   &video_frame2);
+				continue;
+			}
+
+			if (frame_received == NDIlib_frame_type_status_change) {
+				ptz_presets_set_recv(
+					obs_source, ndi_receiver,
+					config_most_recent.ndi_source_name
+						.constData());
 				continue;
 			}
 		}
