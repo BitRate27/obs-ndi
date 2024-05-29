@@ -35,7 +35,7 @@ struct ptz_presets_dock {
 	const NDIlib_v4 *ndiLib;
 	pthread_t ptz_presets_thread;
 	NDIlib_recv_instance_t current_recv;
-	obs_source_t *current_source;
+	bool scene_changed;
 	std::string ndi_name;
 	QWidget *dialog;
 	QLabel *label;
@@ -52,7 +52,11 @@ protected:
 	{
 		QPainter painter(this);
 		context->label->setText(context->ndi_name.c_str());
-		blog(LOG_INFO, "[ptz] paintEvent");
+		for (int b = 0; b < context->nrows * context->ncols; ++b) {
+			context->buttons[b]->setEnabled(context->current_recv);
+		}
+		blog(LOG_INFO, "[ptz] paintEvent %s %d",
+		     context->ndi_name.c_str(), (context->current_recv != nullptr));
 	};
 };
 
@@ -61,58 +65,15 @@ void ptz_preset_button_pressed(int index)
 	if ((index >= 0) && (index < context->nrows * context->ncols))
 		context->button_pressed = index;
 }
+
 void ptz_on_scene_changed(enum obs_frontend_event event, void *param)
 {
-
-	bool EnumPreviewSourcesCallback(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
-	{
-		obs_source_t *source = obs_sceneitem_get_source(item);
-		const char *name = obs_source_get_name(source);
-		blog(LOG_INFO, "[obs-ndi] EnumPreviewSourcesCallback name(%s)", name);
-		// Do something with the source here...
-
-		return true;  // return true to continue enumeration, false to stop
-	}
-	bool EnumProgramSourcesCallback(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
-	{
-		obs_source_t *source = obs_sceneitem_get_source(item);
-		const char *name = obs_source_get_name(source);
-		blog(LOG_INFO, "[obs-ndi] EnumPrOGRAMSourcesCallback name(%s)", name);
-		// Do something with the source here...
-
-		return true;  // return true to continue enumeration, false to stop
-	}
-	void EnumerateSourcesInScene(obs_source_t *sceneSource, bool preview)
-	{
-		obs_scene_t *scene = obs_scene_from_source(sceneSource);
-		if (scene)
-		{
-			obs_scene_enum_items(scene, preview ? EnumPreviewSourcesCallback : EnumProgramSourcesCallback, nullptr);
-		}
-	}
-
 	blog(LOG_INFO, "[obs-ndi] ptz_on_scene_changed(%d)", event);
 	auto ctx = (struct ptz_presets_dock *)param;
 	switch (event) {
 	case OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED:
-	case OBS_FRONTEND_EVENT_SCENE_CHANGED: {
-		if (context->current_source)
-			obs_source_release(context->current_source);
-		obs_source_t *temp_preview_scene =
-			obs_frontend_get_current_preview_scene();
-		EnumerateSourcesInScene(temp_preview_scene, true);
-		obs_source_t *temp_program_scene =
-			obs_frontend_get_current_scene();
-		EnumerateSourcesInScene(temp_program_scene, false);
-		context->current_source = nullptr;
-		if (temp_preview_scene != temp_program_scene)
-			context->current_source = temp_preview_scene;
-		else
-			obs_source_release(temp_preview_sscene);
-		obs_source_release(temp_program_scene);	
+		context->scene_changed = true;
 		break;
-	}
-
 	default:
 		break;
 	}
@@ -121,21 +82,50 @@ void ptz_on_scene_changed(enum obs_frontend_event event, void *param)
 void ptz_presets_set_recv(obs_source_t *source, NDIlib_recv_instance_t recv,
 			  const char *ndiname)
 {
-	if (source != context->current_source)
+	if (!context->scene_changed)
 		return;
 
-	if (recv && context->ndiLib->recv_ptz_is_supported(recv)) {
-		obs_source_release(context->current_source);
-		context->current_source = nullptr;
+	auto source_name = obs_source_get_name(source);
+
+	obs_source_t *preview_source =
+		obs_frontend_get_current_preview_scene();	
+	auto preview_scene = obs_scene_from_source(preview_source);
+	obs_source_release(preview_source);
+
+	// Find the source in the current preview scene
+	obs_sceneitem_t *found_scene_item =
+		obs_scene_find_source_recursive(preview_scene, source_name);
+
+	if (found_scene_item == nullptr)
+		return;
+
+	// Find the source in the current program scene
+	obs_source_t *program_source = obs_frontend_get_current_scene();
+	auto program_scene = obs_scene_from_source(program_source);
+	obs_source_release(program_source);
+
+	// Find the source in the current preview scene
+	found_scene_item =
+		obs_scene_find_source_recursive(program_scene, source_name);
+	
+	if (found_scene_item != nullptr) {
+		context->scene_changed = false;
+		context->ndi_name = "Preview NDI source also on program";
 		context->current_recv = nullptr;
-		context->ndi_name = "Source does not support PTZ";
+		context->dialog->update();
+		return;
+	}
+	/*
+	if (recv && !context->ndiLib->recv_ptz_is_supported(recv)) {
+		context->scene_changed = false;
+		context->current_recv = nullptr;
+		context->ndi_name = "Preview NDI source does not support PTZ";
 		context->dialog->update();
 		blog(LOG_INFO, "[obs-ndi] ptz_presets_set_recv [%s]", context->ndi_name);
 		return;
 	}
-
-	obs_source_release(context->current_source);
-	context->current_source = nullptr;	
+	*/
+	context->scene_changed = false;
 	context->current_recv = recv;
 	context->ndi_name = ndiname;
 	context->dialog->update();
