@@ -61,9 +61,36 @@ void ptz_preset_button_pressed(int index)
 	if ((index >= 0) && (index < context->nrows * context->ncols))
 		context->button_pressed = index;
 }
-
 void ptz_on_scene_changed(enum obs_frontend_event event, void *param)
 {
+
+	bool EnumPreviewSourcesCallback(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
+	{
+		obs_source_t *source = obs_sceneitem_get_source(item);
+		const char *name = obs_source_get_name(source);
+		blog(LOG_INFO, "[obs-ndi] EnumPreviewSourcesCallback name(%s)", name);
+		// Do something with the source here...
+
+		return true;  // return true to continue enumeration, false to stop
+	}
+	bool EnumProgramSourcesCallback(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
+	{
+		obs_source_t *source = obs_sceneitem_get_source(item);
+		const char *name = obs_source_get_name(source);
+		blog(LOG_INFO, "[obs-ndi] EnumPrOGRAMSourcesCallback name(%s)", name);
+		// Do something with the source here...
+
+		return true;  // return true to continue enumeration, false to stop
+	}
+	void EnumerateSourcesInScene(obs_source_t *sceneSource, bool preview)
+	{
+		obs_scene_t *scene = obs_scene_from_source(sceneSource);
+		if (scene)
+		{
+			obs_scene_enum_items(scene, preview ? EnumPreviewSourcesCallback : EnumProgramSourcesCallback, nullptr);
+		}
+	}
+
 	blog(LOG_INFO, "[obs-ndi] ptz_on_scene_changed(%d)", event);
 	auto ctx = (struct ptz_presets_dock *)param;
 	switch (event) {
@@ -71,16 +98,18 @@ void ptz_on_scene_changed(enum obs_frontend_event event, void *param)
 	case OBS_FRONTEND_EVENT_SCENE_CHANGED: {
 		if (context->current_source)
 			obs_source_release(context->current_source);
-		obs_source_t *temp_preview_source =
+		obs_source_t *temp_preview_scene =
 			obs_frontend_get_current_preview_scene();
-		obs_source_t *temp_program_source =
+		EnumerateSourcesInScene(temp_preview_scene, true);
+		obs_source_t *temp_program_scene =
 			obs_frontend_get_current_scene();
+		EnumerateSourcesInScene(temp_program_scene, false);
 		context->current_source = nullptr;
-		if (temp_preview_source != temp_program_source)
-			context->current_source = temp_preview_source;
+		if (temp_preview_scene != temp_program_scene)
+			context->current_source = temp_preview_scene;
 		else
-			obs_source_release(temp_preview_source);
-		obs_source_release(temp_program_source);	
+			obs_source_release(temp_preview_sscene);
+		obs_source_release(temp_program_scene);	
 		break;
 	}
 
