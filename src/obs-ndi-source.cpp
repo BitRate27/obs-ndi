@@ -617,9 +617,10 @@ void *ndi_source_thread(void *data)
         // Change the ndi_receiver associated with the ptz-presets-dock
 		// if this source is on_preview and is not on_program otherwise 
 		// turn off ptz-presets-dock.
-		//if (config_most_recent.ptz.on_preview)
+		if (config_most_recent.ptz.on_preview)
 			ptz_presets_set_recv(
-				obs_source, ndi_receiver,
+				obs_source,
+				ndi_receiver,
 				config_most_recent.ndi_source_name.constData());
 
 		if (config_most_recent.ptz.enabled) {
@@ -735,7 +736,8 @@ void *ndi_source_thread(void *data)
 
 			if (frame_received == NDIlib_frame_type_status_change) {
 				ptz_presets_set_recv(
-					obs_source, ndi_receiver,
+					obs_source,
+					ndi_receiver,
 					config_most_recent.ndi_source_name
 						.constData());
 				continue;

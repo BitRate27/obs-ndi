@@ -73,6 +73,10 @@ void ptz_on_scene_changed(enum obs_frontend_event event, void *param)
 	switch (event) {
 	case OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED:
 		context->scene_changed = true;
+		context->current_recv = nullptr;
+		context->ndi_name = obs_module_text(
+			"NDIPlugin.PTZPresetsDock.NotSupported");
+		context->dialog->update();
 		break;
 	default:
 		break;
@@ -99,37 +103,43 @@ void ptz_presets_set_recv(obs_source_t *source, NDIlib_recv_instance_t recv,
 	if (found_scene_item == nullptr)
 		return;
 
+	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_recv source [%s] on preview",
+	     source_name);
+
+	if (recv && !context->ndiLib->recv_ptz_is_supported(recv)) {
+		context->ndi_name = obs_module_text(
+			"NDIPlugin.PTZPresetsDock.NotSupported");
+		context->dialog->update();
+		blog(LOG_INFO,
+		     "[obs-ndi] ptz_presets_set_recv not supported [%s]",
+		     context->ndi_name.c_str());
+		return;
+	}
+
+	context->scene_changed = false;
+
 	// Find the source in the current program scene
 	obs_source_t *program_source = obs_frontend_get_current_scene();
 	auto program_scene = obs_scene_from_source(program_source);
 	obs_source_release(program_source);
-
-	// Find the source in the current preview scene
 	found_scene_item =
 		obs_scene_find_source_recursive(program_scene, source_name);
-	
+
 	if (found_scene_item != nullptr) {
-		context->scene_changed = false;
-		context->ndi_name = "Preview NDI source also on program";
-		context->current_recv = nullptr;
+		context->ndi_name =
+			obs_module_text("NDIPlugin.PTZPresetsDock.OnProgram");
 		context->dialog->update();
+		blog(LOG_INFO,
+		     "[obs-ndi] ptz_presets_set_recv source [%s] on program",
+		     source_name);
 		return;
 	}
-	/*
-	if (recv && !context->ndiLib->recv_ptz_is_supported(recv)) {
-		context->scene_changed = false;
-		context->current_recv = nullptr;
-		context->ndi_name = "Preview NDI source does not support PTZ";
-		context->dialog->update();
-		blog(LOG_INFO, "[obs-ndi] ptz_presets_set_recv [%s]", context->ndi_name);
-		return;
-	}
-	*/
-	context->scene_changed = false;
+
 	context->current_recv = recv;
 	context->ndi_name = ndiname;
 	context->dialog->update();
-	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_recv [%s]", context->ndi_name);
+	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_recv finished [%s]",
+	     context->ndi_name.c_str());
 	return;
 }
 
@@ -172,7 +182,7 @@ void ptz_presets_init(const NDIlib_v4 *ndiLib)
 
 	QVBoxLayout *vbox = new QVBoxLayout(context->dialog);
 
-	context->label = new QLabel("Preview source not PTZ capable");
+	context->label = new QLabel("");
 	context->label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
 	vbox->addWidget(context->label);
@@ -199,8 +209,9 @@ void ptz_presets_init(const NDIlib_v4 *ndiLib)
 	context->button_pressed = -1;
 	context->running = false;
 
-	obs_frontend_add_dock_by_id("Preview PTZ Presets",
-				    "Preview PTZ Presets", context->dialog);
+	obs_frontend_add_dock_by_id(obs_module_text("NDIPlugin.PTZPresetsDock.Title"),
+		obs_module_text("NDIPlugin.PTZPresetsDock.Title"),
+		context->dialog);
 
 	blog(LOG_INFO, "[obs-ndi] obs_module_load: PTZ Presets Dock added");
 	if (!context->running) {
