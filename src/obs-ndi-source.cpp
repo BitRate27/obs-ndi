@@ -75,8 +75,6 @@ typedef struct {
 	float pan;
 	float tilt;
 	float zoom;
-	bool on_program;
-	bool on_preview;
 } ptz_t;
 
 typedef struct {
@@ -560,7 +558,6 @@ void *ndi_source_thread(void *data)
 			if (config_most_recent.framesync_enabled) {
 				timestamp_audio = 0;
 				timestamp_video = 0;
-
 #if 1
 				blog(LOG_INFO,
 				     "[obs-ndi] ndi_source_thread: '%s' +ndi_frame_sync = ndiLib->framesync_create(ndi_receiver)",
@@ -613,15 +610,6 @@ void *ndi_source_thread(void *data)
 			ndiLib->recv_send_metadata(ndi_receiver,
 						   &hwAccelMetadata);
 		}
-
-        // Change the ndi_receiver associated with the ptz-presets-dock
-		// if this source is on_preview and is not on_program otherwise 
-		// turn off ptz-presets-dock.
-		if (config_most_recent.ptz.on_preview)
-			ptz_presets_set_recv(
-				obs_source,
-				ndi_receiver,
-				config_most_recent.ndi_source_name.constData());
 
 		if (config_most_recent.ptz.enabled) {
 			const static float tollerance = 0.001f;
@@ -735,11 +723,11 @@ void *ndi_source_thread(void *data)
 			}
 
 			if (frame_received == NDIlib_frame_type_status_change) {
-				ptz_presets_set_recv(
-					obs_source,
-					ndi_receiver,
-					config_most_recent.ndi_source_name
-						.constData());
+				if (ndiLib->recv_ptz_is_supported(ndi_receiver))
+					ptz_presets_set_ndiname_recv_map(
+						recv_desc.source_to_connect_to
+							.p_ndi_name,
+						ndi_receiver);
 				continue;
 			}
 		}
@@ -932,6 +920,7 @@ void ndi_source_update(void *data, obs_data_t *settings)
 
 	config.ndi_source_name = obs_data_get_string(settings, PROP_SOURCE);
 	config.bandwidth = (int)obs_data_get_int(settings, PROP_BANDWIDTH);
+	ptz_presets_set_source_ndiname_map(name, config.ndi_source_name.data());
 
 	config.sync_mode = (int)obs_data_get_int(settings, PROP_SYNC);
 	// if sync mode is set to the unsupported "Internal" mode, set it
@@ -989,10 +978,6 @@ void ndi_source_update(void *data, obs_data_t *settings)
 	config.tally.on_program = conf->TallyProgramEnabled &&
 				  obs_source_active(obs_source);
 
-	// Update ptz as far as where this source is shown
-	config.ptz.on_preview = obs_source_showing(obs_source);
-	config.ptz.on_program = obs_source_active(obs_source);
-
 	s->config = config;
 
 	if (!config.ndi_source_name.isEmpty()) {
@@ -1012,7 +997,6 @@ void ndi_source_shown(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_shown('%s'...)", name);
 	s->config.tally.on_preview = (Config::Current())->TallyPreviewEnabled;
-	s->config.ptz.on_preview = true;
 }
 
 void ndi_source_hidden(void *data)
@@ -1021,7 +1005,6 @@ void ndi_source_hidden(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_hidden('%s'...)", name);
 	s->config.tally.on_preview = false;
-	s->config.ptz.on_preview = false;
 }
 
 void ndi_source_activated(void *data)
@@ -1030,7 +1013,6 @@ void ndi_source_activated(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_activated('%s'...)", name);
 	s->config.tally.on_program = (Config::Current())->TallyProgramEnabled;
-	s->config.ptz.on_program = true;
 }
 
 void ndi_source_deactivated(void *data)
@@ -1039,7 +1021,6 @@ void ndi_source_deactivated(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_deactivated('%s'...)", name);
 	s->config.tally.on_program = false;
-	s->config.ptz.on_program = false;
 }
 
 void ndi_source_renamed(void *data, calldata_t *)
