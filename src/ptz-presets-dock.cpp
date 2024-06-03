@@ -63,17 +63,25 @@ void ptz_preset_button_pressed(int index)
 	if ((index >= 0) && (index < context->nrows * context->ncols))
 		context->button_pressed = index;
 }
+void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx);
 
 static std::map<std::string, NDIlib_recv_instance_t> ndi_recv_map;
 void ptz_presets_set_ndiname_recv_map(std::string ndi_name,
 				      NDIlib_recv_instance_t recv) 
 {
-	if (ndiLib->recv_ptz_is_supported(recv)) {
+	if (context->ndiLib->recv_ptz_is_supported(recv)) {
 		ndi_recv_map[ndi_name] = recv;
 		ptz_presets_set_dock_context(context);
 	}
 }
 
+NDIlib_recv_instance_t lookup_recv(std::string name) {
+	auto it = ndi_recv_map.find(name);
+	if (it != ndi_recv_map.end()) {
+		return it->second;
+	}
+	return nullptr;
+}
 static std::map<std::string, std::string> source_ndi_map;
 void ptz_presets_set_source_ndiname_map(std::string source_name,
 				      std::string ndi_name)
@@ -81,6 +89,13 @@ void ptz_presets_set_source_ndiname_map(std::string source_name,
 	source_ndi_map[source_name] = ndi_name;
 }
 
+std::string lookup_ndiname(std::string source) {
+	auto it = source_ndi_map.find(source);
+	if (it != source_ndi_map.end()) {
+		return it->second;
+	}
+	return "";
+}
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 {
 	obs_source_t *source = obs_sceneitem_get_source(item);
@@ -92,15 +107,10 @@ bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 	std::vector<std::string> *names =
 		reinterpret_cast<std::vector<std::string> *>(param);
 
-	auto it = source_ndi_map.find(name);
-	if (it != source_ndi_map.end()) {
-		// Only add if ptz supported: ndi_recv_map only 
-		// has ptz supported ndi receivers
-		auto recv_it = ndi_recv_map.find(it->second);
-		if (recv_it != ndi_recv_map.end()) {
-			names->push_back(it->second);
-		}
-	}
+	auto ndi_name = lookup_ndiname(name);
+	auto recv = lookup_recv(ndi_name);
+	if (recv != nullptr)
+		names->push_back(ndi_name);
 
 	return true;
 }
@@ -118,27 +128,27 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 	auto preview_scene = obs_scene_from_source(preview_source);
 	obs_source_release(preview_source);
 	
-	std::vector<std::string> preview_sources;
-	CreateListOfNDINames(preview_scene, preview_sources);
+	std::vector<std::string> preview_ndinames;
+	CreateListOfNDINames(preview_scene, preview_ndinames);
 	
-	if (preview_sources.size() == 0) {
+	if (preview_ndinames.size() == 0) {
 		ctx->current_recv = nullptr;
 		ctx->ndi_name = obs_module_text(
 			"NDIPlugin.PTZPresetsDock.NotSupported");
-		break;
+		return;
 	}
 
 	obs_source_t *program_source = obs_frontend_get_current_scene();
 	auto program_scene = obs_scene_from_source(program_source);
 	obs_source_release(program_source);
 
-	std::vector<std::string> program_sources;
-	CreateListOfNDINames(program_scene, program_sources);
+	std::vector<std::string> program_ndinames;
+	CreateListOfNDINames(program_scene, program_ndinames);
 
 	bool found = false;
-	for (const std::string &name : preview_sources) {
-		auto it = std::find(program_sources.begin(), program_sources.end(), name);
-		if (it != program_sources.end()) {
+	for (const std::string &name : preview_ndinames) {
+		auto it = std::find(program_ndinames.begin(), program_ndinames.end(), name);
+		if (it != program_ndinames.end()) {
 			ctx->current_recv = nullptr;
 			ctx->ndi_name = obs_module_text("NDIPlugin.PTZPresetsDock.OnProgram");
 			found = true;
@@ -147,13 +157,12 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 	}
 
 	if (!found) {				
-		auto it = ndi_recv_map.find(name);
-		if (it != ndi_recv_map.end()) {
-			ctx->current_recv = it->second;
-			ctx->ndi_name = name;
+		auto ndi_name = preview_ndinames[0];
+		ctx->current_recv = lookup_recv(ndi_name);
+		if (ctx->current_recv != nullptr) {
+			ctx->ndi_name = ndi_name;
 		}
 		else {
-			ctx->current_recv = nullptr;
 			ctx->ndi_name = obs_module_text(
 				"NDIPlugin.PTZPresetsDock.NotSupported");
 		}

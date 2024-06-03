@@ -554,7 +554,11 @@ void *ndi_source_thread(void *data)
 				     recv_desc.source_to_connect_to.p_ndi_name);
 				break;
 			}
-
+			
+			ptz_presets_set_ndiname_recv_map(
+				recv_desc.source_to_connect_to.p_ndi_name,
+				ndi_receiver);
+			
 			if (config_most_recent.framesync_enabled) {
 				timestamp_audio = 0;
 				timestamp_video = 0;
