@@ -723,11 +723,10 @@ void *ndi_source_thread(void *data)
 			}
 
 			if (frame_received == NDIlib_frame_type_status_change) {
-				if (ndiLib->recv_ptz_is_supported(ndi_receiver))
-					ptz_presets_set_ndiname_recv_map(
-						recv_desc.source_to_connect_to
-							.p_ndi_name,
-						ndi_receiver);
+				ptz_presets_set_ndiname_recv_map(
+					recv_desc.source_to_connect_to
+						.p_ndi_name,
+					ndi_receiver);
 				continue;
 			}
 		}

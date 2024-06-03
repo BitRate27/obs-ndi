@@ -68,7 +68,10 @@ static std::map<std::string, NDIlib_recv_instance_t> ndi_recv_map;
 void ptz_presets_set_ndiname_recv_map(std::string ndi_name,
 				      NDIlib_recv_instance_t recv) 
 {
-	ndi_recv_map[ndi_name] = recv;
+	if (ndiLib->recv_ptz_is_supported(recv)) {
+		ndi_recv_map[ndi_name] = recv;
+		ptz_presets_set_dock_context(context);
+	}
 }
 
 static std::map<std::string, std::string> source_ndi_map;
@@ -81,6 +84,9 @@ void ptz_presets_set_source_ndiname_map(std::string source_name,
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 {
 	obs_source_t *source = obs_sceneitem_get_source(item);
+	
+	if (!obs_source_showing(source)) return true; // Only care if it is showing
+
 	const char *name = obs_source_get_name(source);
 
 	std::vector<std::string> *names =
@@ -105,57 +111,63 @@ void CreateListOfNDINames(obs_scene_t *scene,
 	obs_scene_enum_items(scene, EnumerateSceneItems, &names);
 }
 
+void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx) 
+{
+	obs_source_t *preview_source =
+		obs_frontend_get_current_preview_scene();
+	auto preview_scene = obs_scene_from_source(preview_source);
+	obs_source_release(preview_source);
+	
+	std::vector<std::string> preview_sources;
+	CreateListOfNDINames(preview_scene, preview_sources);
+	
+	if (preview_sources.size() == 0) {
+		ctx->current_recv = nullptr;
+		ctx->ndi_name = obs_module_text(
+			"NDIPlugin.PTZPresetsDock.NotSupported");
+		break;
+	}
+
+	obs_source_t *program_source = obs_frontend_get_current_scene();
+	auto program_scene = obs_scene_from_source(program_source);
+	obs_source_release(program_source);
+
+	std::vector<std::string> program_sources;
+	CreateListOfNDINames(program_scene, program_sources);
+
+	bool found = false;
+	for (const std::string &name : preview_sources) {
+		auto it = std::find(program_sources.begin(), program_sources.end(), name);
+		if (it != program_sources.end()) {
+			ctx->current_recv = nullptr;
+			ctx->ndi_name = obs_module_text("NDIPlugin.PTZPresetsDock.OnProgram");
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {				
+		auto it = ndi_recv_map.find(name);
+		if (it != ndi_recv_map.end()) {
+			ctx->current_recv = it->second;
+			ctx->ndi_name = name;
+		}
+		else {
+			ctx->current_recv = nullptr;
+			ctx->ndi_name = obs_module_text(
+				"NDIPlugin.PTZPresetsDock.NotSupported");
+		}
+	}
+}
+
 void ptz_on_scene_changed(enum obs_frontend_event event, void *param)
 {
 	blog(LOG_INFO, "[obs-ndi] ptz_on_scene_changed(%d)", event);
 	auto ctx = (struct ptz_presets_dock *)param;
 	switch (event) {
 	case OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED: {
-		obs_source_t *preview_source =
-			obs_frontend_get_current_preview_scene();
-		auto preview_scene = obs_scene_from_source(preview_source);
-		obs_source_release(preview_source);
-		
-		std::vector<std::string> preview_sources;
-		CreateListOfNDINames(preview_scene, preview_sources);
-		
-		obs_source_t *program_source = obs_frontend_get_current_scene();
-		auto program_scene = obs_scene_from_source(program_source);
-		obs_source_release(program_source);
-
-		std::vector<std::string> program_sources;
-		CreateListOfNDINames(program_scene, program_sources);
-
-		bool found = false;
-		for (const std::string &name : preview_sources) {
-			auto it = std::find(program_sources.begin(), program_sources.end(), name);
-			if (it != program_sources.end()) {
-				ctx->current_recv = nullptr;
-				ctx->ndi_name = obs_module_text("NDIPlugin.PTZPresetsDock.OnProgram");
-				found = true;
-				break;
-			}
-		}
-
-		if (!found) {				
-			bool recv_found = false;
-			for (const std::string &name : preview_sources) {
-				auto it = ndi_recv_map.find(name);
-				if (it != ndi_recv_map.end()) {
-					ctx->current_recv = it->second;
-					ctx->ndi_name = name;
-					recv_found = true;
-					break;
-				}
-			}
-			if (!recv_found) {
-				ctx->current_recv = nullptr;
-				ctx->ndi_name = obs_module_text(
-					"NDIPlugin.PTZPresetsDock.NotSupported");
-			}
-		}
-
-		context->dialog->update();
+		ptz_presets_set_dock_context(ctx);
+		ctx->dialog->update();
 		break;
 	}
 	default:
