@@ -46,6 +46,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define PROP_PAN "ndi_pan"
 #define PROP_TILT "ndi_tilt"
 #define PROP_ZOOM "ndi_zoom"
+#define PROP_PRESET "preset%d"
 
 #define PROP_BW_UNDEFINED -1
 #define PROP_BW_HIGHEST 0
@@ -75,6 +76,7 @@ typedef struct {
 	float pan;
 	float tilt;
 	float zoom;
+	std::vector<std::string> presets;
 } ptz_t;
 
 typedef struct {
@@ -325,6 +327,16 @@ obs_properties_t *ndi_source_getproperties(void *)
 	obs_properties_add_float_slider(
 		group_ptz, PROP_ZOOM,
 		obs_module_text("NDIPlugin.SourceProps.Zoom"), 0.0, 1.0, 0.001);
+
+	for (int pp = 1; pp < 10; pp++) {		
+		char pid[20];
+		sprintf(pid, PROP_PRESET, pp);
+		char pname[20];
+		sprintf(pname, "Preset %d", pp);
+		obs_property_t *p = obs_properties_add_text(
+			group_ptz, pid, pname, OBS_TEXT_DEFAULT);
+	}
+
 	obs_properties_add_group(props, PROP_PTZ,
 				 obs_module_text("NDIPlugin.SourceProps.PTZ"),
 				 OBS_GROUP_CHECKABLE, group_ptz);
@@ -370,6 +382,13 @@ void ndi_source_getdefaults(obs_data_t *settings)
 				 PROP_YUV_SPACE_BT709);
 	obs_data_set_default_int(settings, PROP_LATENCY, PROP_LATENCY_NORMAL);
 	obs_data_set_default_bool(settings, PROP_AUDIO, true);
+	for (int pp = 1; pp < 10; pp++) {
+		char pid[20];
+		sprintf(pid, PROP_PRESET, pp);
+		char pname[20];
+		sprintf(pname, "Preset %d", pp);
+		obs_data_set_default_string(settings, pid, pname);
+	}
 }
 
 void ndi_source_thread_process_audio2(ndi_source_config_t *config,
@@ -554,7 +573,8 @@ void *ndi_source_thread(void *data)
 				     recv_desc.source_to_connect_to.p_ndi_name);
 				break;
 			}
-			
+			ptz_presets_set_source_ndiname_map(obs_source_get_name(obs_source),
+				recv_desc.source_to_connect_to.p_ndi_name);
 			ptz_presets_set_ndiname_recv_map(
 				recv_desc.source_to_connect_to.p_ndi_name,
 				ndi_receiver);
@@ -731,6 +751,10 @@ void *ndi_source_thread(void *data)
 					recv_desc.source_to_connect_to
 						.p_ndi_name,
 					ndi_receiver);
+				ptz_presets_set_source_ndiname_map(
+					obs_source_get_name(obs_source),
+					recv_desc.source_to_connect_to
+						.p_ndi_name);
 				continue;
 			}
 		}
@@ -924,6 +948,7 @@ void ndi_source_update(void *data, obs_data_t *settings)
 	config.ndi_source_name = obs_data_get_string(settings, PROP_SOURCE);
 	config.bandwidth = (int)obs_data_get_int(settings, PROP_BANDWIDTH);
 	ptz_presets_set_source_ndiname_map(name, config.ndi_source_name.data());
+	ptz_presets_set_source_context_map(name, (void *)s);
 
 	config.sync_mode = (int)obs_data_get_int(settings, PROP_SYNC);
 	// if sync mode is set to the unsupported "Internal" mode, set it
@@ -973,6 +998,13 @@ void ndi_source_update(void *data, obs_data_t *settings)
 	float tilt = (float)obs_data_get_double(settings, PROP_TILT);
 	float zoom = (float)obs_data_get_double(settings, PROP_ZOOM);
 	config.ptz = {ptz_enabled, pan, tilt, zoom};
+
+	config.ptz.presets = std::vector<std::string>(9);
+	for (int p = 1; p < 10; p++) {
+		char pid[20];
+		sprintf(pid, PROP_PRESET, p);
+		config.ptz.presets[p-1] = obs_data_get_string(settings, pid);
+	}
 
 	// Update tally status
 	Config *conf = Config::Current();
@@ -1035,6 +1067,15 @@ void ndi_source_renamed(void *data, calldata_t *)
 		QString("OBS-NDI '%1'").arg(name).toUtf8();
 }
 
+std::vector<std::string> ndi_source_get_preset_names(ndi_source_t *data)
+{
+	if (!data)
+		return {};
+
+	auto s = (ndi_source_t *)data;
+	return s->config.ptz.presets;
+}
+
 void *ndi_source_create(obs_data_t *settings, obs_source_t *obs_source)
 {
 	auto name = obs_source_get_name(obs_source);
@@ -1049,6 +1090,9 @@ void *ndi_source_create(obs_data_t *settings, obs_source_t *obs_source)
 	signal_handler_connect(sh, "rename", ndi_source_renamed, s);
 
 	ndi_source_update(s, settings);
+
+	ptz_presets_set_source_context_map(name, (void *)s);
+	ptz_presets_set_preset_names_cb((ptz_presets_cb)ndi_source_get_preset_names);
 
 	blog(LOG_INFO, "[obs-ndi] -ndi_source_create('%s'...)", name);
 

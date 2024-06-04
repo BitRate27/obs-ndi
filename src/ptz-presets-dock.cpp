@@ -11,6 +11,7 @@
 #include <pthread.h>
 
 #include <Processing.NDI.Lib.h>
+#include <qlineedit.h>
 
 void ptz_preset_button_pressed(int);
 
@@ -20,7 +21,7 @@ public:
 		: QPushButton(parent_),
 		  index(index_)
 	{
-		this->setText(QString::asprintf("Preset %d", index));
+		this->setText(QString::asprintf("BPreset %d", index));
 		this->setSizePolicy(QSizePolicy::Expanding,
 				    QSizePolicy::Expanding);
 		QObject::connect(this, &QPushButton::clicked, this,
@@ -35,6 +36,7 @@ struct ptz_presets_dock {
 	const NDIlib_v4 *ndiLib;
 	pthread_t ptz_presets_thread;
 	NDIlib_recv_instance_t current_recv;
+	std::string current_source_name;
 	bool scene_changed;
 	std::string ndi_name;
 	QWidget *dialog;
@@ -43,8 +45,10 @@ struct ptz_presets_dock {
 	int ncols;
 	int nrows;
 	int button_pressed;
+	ptz_presets_cb get_names_cb;
 };
 static struct ptz_presets_dock *context;
+void *lookup_ndicontext(std::string name);
 
 class PTZPresetsWidget : public QWidget {
 protected:
@@ -52,8 +56,14 @@ protected:
 	{
 		QPainter painter(this);
 		context->label->setText(context->ndi_name.c_str());
+		std::vector<std::string> preset_names =
+			context->get_names_cb(lookup_ndicontext(context->current_source_name));
 		for (int b = 0; b < context->nrows * context->ncols; ++b) {
 			context->buttons[b]->setEnabled(context->current_recv);
+			if (b < preset_names.size())
+				preset_names[b].resize(12);
+				context->buttons[b]->setText(
+					preset_names[b].c_str());
 		}
 	};
 };
@@ -88,11 +98,33 @@ void ptz_presets_set_source_ndiname_map(std::string source_name,
 {
 	source_ndi_map[source_name] = ndi_name;
 }
-
+static std::map<std::string, void *> source_context_map;
+void ptz_presets_set_source_context_map(std::string source_name,
+					void *context)
+{
+	source_context_map[source_name] = context;
+}
+void* lookup_ndicontext(std::string name)
+{
+	auto it = source_context_map.find(name);
+	if (it != source_context_map.end()) {
+		return it->second;
+	}
+	return nullptr;
+}
 std::string lookup_ndiname(std::string source) {
 	auto it = source_ndi_map.find(source);
 	if (it != source_ndi_map.end()) {
 		return it->second;
+	}
+	return "";
+}
+std::string lookup_sourcename(std::string ndiname)
+{
+	for (const auto &pair : source_ndi_map) {
+		if (pair.second == ndiname) {
+			return pair.first;
+		}
 	}
 	return "";
 }
@@ -125,6 +157,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 {
 	obs_source_t *preview_source =
 		obs_frontend_get_current_preview_scene();
+
 	auto preview_scene = obs_scene_from_source(preview_source);
 	obs_source_release(preview_source);
 	
@@ -133,6 +166,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 	
 	if (preview_ndinames.size() == 0) {
 		ctx->current_recv = nullptr;
+		ctx->current_source_name = "";
 		ctx->ndi_name = obs_module_text(
 			"NDIPlugin.PTZPresetsDock.NotSupported");
 		return;
@@ -150,6 +184,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 		auto it = std::find(program_ndinames.begin(), program_ndinames.end(), name);
 		if (it != program_ndinames.end()) {
 			ctx->current_recv = nullptr;
+			ctx->current_source_name = "";
 			ctx->ndi_name = obs_module_text("NDIPlugin.PTZPresetsDock.OnProgram");
 			found = true;
 			break;
@@ -159,12 +194,15 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 	if (!found) {				
 		auto ndi_name = preview_ndinames[0];
 		ctx->current_recv = lookup_recv(ndi_name);
+
 		if (ctx->current_recv != nullptr) {
-			ctx->ndi_name = ndi_name;
+			ctx->ndi_name = ndi_name;		
+			ctx->current_source_name = lookup_sourcename(ndi_name);
 		}
 		else {
 			ctx->ndi_name = obs_module_text(
 				"NDIPlugin.PTZPresetsDock.NotSupported");
+			ctx->current_source_name = "";
 		}
 	}
 }
@@ -205,13 +243,15 @@ void ptz_presets_thread_start(ptz_presets_dock *s)
 	pthread_create(&s->ptz_presets_thread, nullptr, ptz_presets_thread, s);
 	blog(LOG_INFO, "[obs-ndi] ptz_presets_thread_start");
 }
-
 void ptz_presets_thread_stop(ptz_presets_dock *s)
 {
 	if (s->running) {
 		s->running = false;
 		pthread_join(s->ptz_presets_thread, NULL);
 	}
+}
+void ptz_presets_set_preset_names_cb(ptz_presets_cb callback){
+	context->get_names_cb = callback;
 }
 void ptz_presets_init(const NDIlib_v4 *ndiLib)
 {
