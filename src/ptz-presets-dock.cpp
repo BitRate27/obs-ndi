@@ -55,15 +55,21 @@ protected:
 	void paintEvent(QPaintEvent *event) override
 	{
 		QPainter painter(this);
+
+		blog(LOG_INFO, "[obs-ndi] paintEvent ");
 		context->label->setText(context->ndi_name.c_str());
-		std::vector<std::string> preset_names =
-			context->get_names_cb(lookup_ndicontext(context->current_source_name));
+		std::vector<std::string> preset_names = {};
+
+		if (context->get_names_cb != nullptr) 
+			preset_names = 
+				context->get_names_cb(lookup_ndicontext(context->current_source_name));
+
 		for (int b = 0; b < context->nrows * context->ncols; ++b) {
-			context->buttons[b]->setEnabled(context->current_recv);
-			if (b < preset_names.size())
+			context->buttons[b]->setEnabled(context->current_recv != nullptr);
+			if (b < preset_names.size()) {
 				preset_names[b].resize(12);
-				context->buttons[b]->setText(
-					preset_names[b].c_str());
+				context->buttons[b]->setText(preset_names[b].c_str());
+			}
 		}
 	};
 };
@@ -79,6 +85,7 @@ static std::map<std::string, NDIlib_recv_instance_t> ndi_recv_map;
 void ptz_presets_set_ndiname_recv_map(std::string ndi_name,
 				      NDIlib_recv_instance_t recv) 
 {
+	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_ndiname_recv_map");
 	if (context->ndiLib->recv_ptz_is_supported(recv)) {
 		ndi_recv_map[ndi_name] = recv;
 		ptz_presets_set_dock_context(context);
@@ -103,6 +110,8 @@ void ptz_presets_set_source_context_map(std::string source_name,
 					void *context)
 {
 	source_context_map[source_name] = context;
+	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_source_context_map, %s size=%d",
+		source_name.c_str(),source_context_map.size());
 }
 void* lookup_ndicontext(std::string name)
 {
@@ -171,7 +180,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 			"NDIPlugin.PTZPresetsDock.NotSupported");
 		return;
 	}
-
+	
 	obs_source_t *program_source = obs_frontend_get_current_scene();
 	auto program_scene = obs_scene_from_source(program_source);
 	obs_source_release(program_source);
@@ -196,6 +205,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 		ctx->current_recv = lookup_recv(ndi_name);
 
 		if (ctx->current_recv != nullptr) {
+			blog(LOG_INFO, "[obs-ndi] set source name %s", ndi_name.c_str());
 			ctx->ndi_name = ndi_name;		
 			ctx->current_source_name = lookup_sourcename(ndi_name);
 		}
@@ -280,7 +290,7 @@ void ptz_presets_init(const NDIlib_v4 *ndiLib)
 		for (int j = 0; j < context->ncols; ++j) {
 			int ndx = i * context->ncols + j;
 			context->buttons[ndx] =
-				new PresetButton(context->dialog, ndx + 1);
+				new PresetButton(context->dialog, ndx);
 			context->buttons[ndx]->setEnabled(true);
 			grid->addWidget(context->buttons[ndx], i, j);
 		}
