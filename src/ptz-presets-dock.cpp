@@ -3,7 +3,7 @@
 #include <obs-frontend-api.h>
 #include <qpushbutton.h>
 #include <qgridlayout.h>
-#include <QPainter>
+#include <qevent.h>
 #include <qlabel.h>
 #include "ptz-presets-dock.h"
 #include <chrono>
@@ -85,11 +85,12 @@ static MapWrapper<void*> source_context_map;
 
 class PTZPresetsWidget : public QWidget {
 protected:
-	void paintEvent(QPaintEvent *event) override
-	{
-		QPainter painter(this);
+	void focusInEvent(QFocusEvent *event) override
+	{		
+		if (event->lostFocus()) return;
+		// QPainter painter(this);
 
-		blog(LOG_INFO, "[obs-ndi] paintEvent ");
+		blog(LOG_INFO, "[obs-ndi] focusEvent ");
 		context->label->setText(context->ndi_name.c_str());
 		std::vector<std::string> preset_names = {};
 
@@ -100,7 +101,7 @@ protected:
 		for (int b = 0; b < context->nrows * context->ncols; ++b) {
 			if (context->current_recv != nullptr) {
 				context->buttons[b]->setEnabled(true);
-				if (b < preset_names.size()) {
+				if (b < (int)preset_names.size()) {
 					preset_names[b].resize(12);
 					context->buttons[b]->setText(preset_names[b].c_str());
 				}
@@ -141,6 +142,7 @@ void ptz_presets_set_source_context_map(std::string source_name,
 
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 {
+	if (!scene) return false;
 	obs_source_t *source = obs_sceneitem_get_source(item);
 	
 	if (!obs_source_showing(source)) return true; // Only care if it is showing
@@ -203,7 +205,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 	}
 
 	if (!found) {				
-		auto ndi_name = preview_ndinames[0];
+		std::string ndi_name = preview_ndinames[0];
 		ctx->current_recv = ndi_recv_map.get(ndi_name);
 
 		if (ctx->current_recv != nullptr) {

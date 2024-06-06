@@ -330,7 +330,7 @@ obs_properties_t *ndi_source_getproperties(void *)
 		obs_module_text("NDIPlugin.SourceProps.Zoom"), 0.0, 1.0, 0.001);
 
 	for (int pp = 1; pp <= PROP_NPRESETS; pp++) {		
-		obs_property_t *p = obs_properties_add_text(
+		obs_properties_add_text(
 			group_ptz, 
 			QString(PROP_PRESET).arg(pp).toUtf8(),
 			QString("Preset %1").arg(pp).toUtf8(),
