@@ -1,34 +1,34 @@
-#include <obs.h>
-#include <obs-module.h>
-#include <obs-frontend-api.h>
-#include <qpushbutton.h>
-#include <qgridlayout.h>
-#include <qevent.h>
-#include <qlabel.h>
-#include "ptz-presets-dock.h"
-#include <chrono>
-#include <thread>
-#include <pthread.h>
 
-#include <Processing.NDI.Lib.h>
+#include <chrono>
+#include <obs.h>
+#include <obs-frontend-api.h>
+#include <obs-module.h>
+#include <pthread.h>
+#include <qgridlayout.h>
+#include <qlabel.h>
+#include <QMouseEvent>
+#include <qpainter.h>
+#include <qpushbutton.h>
+#include <thread>
 #include <qlineedit.h>
+#include "ptz-presets-dock.h"
 
 void ptz_preset_button_pressed(int);
 
 class PresetButton : public QPushButton {
 public:
-	inline PresetButton(QWidget *parent_, int index_)
-		: QPushButton(parent_),
-		  index(index_)
-	{
-		this->setText("");
-		this->setSizePolicy(QSizePolicy::Expanding,
-				    QSizePolicy::Expanding);
-		QObject::connect(this, &QPushButton::clicked, this,
-				 &PresetButton::PresetButtonClicked);
-	}
-	inline void PresetButtonClicked() { ptz_preset_button_pressed(index); }
-	int index;
+    inline PresetButton(QWidget *parent_, int index_)
+        : QPushButton(parent_),
+          index(index_)
+    {
+        this->setText("");
+        this->setSizePolicy(QSizePolicy::Expanding,
+                            QSizePolicy::Expanding);
+        QObject::connect(this, &QPushButton::clicked, this,
+                         &PresetButton::PresetButtonClicked);
+    }
+    inline void PresetButtonClicked() { ptz_preset_button_pressed(index); }
+    int index;
 };
 
 struct ptz_presets_dock {
@@ -85,12 +85,12 @@ static MapWrapper<void*> source_context_map;
 
 class PTZPresetsWidget : public QWidget {
 protected:
-	void focusInEvent(QFocusEvent *event) override
+	void paintEvent(QPaintEvent *event) override
 	{		
-		if (event->lostFocus()) return;
-		// QPainter painter(this);
+		if (!event) return;
 
-		blog(LOG_INFO, "[obs-ndi] focusEvent ");
+		QPainter painter(this);
+
 		context->label->setText(context->ndi_name.c_str());
 		std::vector<std::string> preset_names = {};
 

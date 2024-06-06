@@ -1000,7 +1000,12 @@ void ndi_source_update(void *data, obs_data_t *settings)
 
 	config.ptz.presets = std::vector<std::string>(PROP_NPRESETS);
 	for (int pp = 1; pp <= PROP_NPRESETS; pp++) {
-		config.ptz.presets[pp - 1] = obs_data_get_string(
+		config.ptz.presets
+			[static_cast<std::vector<
+				 std::string,
+				 std::allocator<std::string>>::size_type>(pp) -
+			 1] =
+			obs_data_get_string(
 			settings, QString(PROP_PRESET).arg(pp).toUtf8());
 	}
 
