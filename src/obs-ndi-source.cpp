@@ -46,7 +46,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #define PROP_PAN "ndi_pan"
 #define PROP_TILT "ndi_tilt"
 #define PROP_ZOOM "ndi_zoom"
-#define PROP_PRESET "preset%d"
+#define PROP_PRESET "preset%1"
+#define PROP_NPRESETS 9
 
 #define PROP_BW_UNDEFINED -1
 #define PROP_BW_HIGHEST 0
@@ -328,13 +329,12 @@ obs_properties_t *ndi_source_getproperties(void *)
 		group_ptz, PROP_ZOOM,
 		obs_module_text("NDIPlugin.SourceProps.Zoom"), 0.0, 1.0, 0.001);
 
-	for (int pp = 1; pp < 10; pp++) {		
-		char pid[20];
-		sprintf(pid, PROP_PRESET, pp);
-		char pname[20];
-		sprintf(pname, "Preset %d", pp);
+	for (int pp = 1; pp <= PROP_NPRESETS; pp++) {		
 		obs_property_t *p = obs_properties_add_text(
-			group_ptz, pid, pname, OBS_TEXT_DEFAULT);
+			group_ptz, 
+			QString(PROP_PRESET).arg(pp).toUtf8(),
+			QString("Preset %1").arg(pp).toUtf8(),
+			OBS_TEXT_DEFAULT);
 	}
 
 	obs_properties_add_group(props, PROP_PTZ,
@@ -382,12 +382,11 @@ void ndi_source_getdefaults(obs_data_t *settings)
 				 PROP_YUV_SPACE_BT709);
 	obs_data_set_default_int(settings, PROP_LATENCY, PROP_LATENCY_NORMAL);
 	obs_data_set_default_bool(settings, PROP_AUDIO, true);
-	for (int pp = 1; pp < 10; pp++) {
-		char pid[20];
-		sprintf(pid, PROP_PRESET, pp);
-		char pname[20];
-		sprintf(pname, "Preset %d", pp);
-		obs_data_set_default_string(settings, pid, pname);
+	for (int pp = 1; pp <= PROP_NPRESETS; pp++) {
+		obs_data_set_default_string(
+			settings, 
+			QString(PROP_PRESET).arg(pp).toUtf8(),
+			QString("Preset %1").arg(pp).toUtf8());
 	}
 }
 
@@ -999,11 +998,10 @@ void ndi_source_update(void *data, obs_data_t *settings)
 	float zoom = (float)obs_data_get_double(settings, PROP_ZOOM);
 	config.ptz = {ptz_enabled, pan, tilt, zoom};
 
-	config.ptz.presets = std::vector<std::string>(9);
-	for (int p = 1; p < 10; p++) {
-		char pid[20];
-		sprintf(pid, PROP_PRESET, p);
-		config.ptz.presets[p-1] = obs_data_get_string(settings, pid);
+	config.ptz.presets = std::vector<std::string>(PROP_NPRESETS);
+	for (int pp = 1; pp <= PROP_NPRESETS; pp++) {
+		config.ptz.presets[pp - 1] = obs_data_get_string(
+			settings, QString(PROP_PRESET).arg(pp).toUtf8());
 	}
 
 	// Update tally status
@@ -1032,6 +1030,9 @@ void ndi_source_shown(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_shown('%s'...)", name);
 	s->config.tally.on_preview = (Config::Current())->TallyPreviewEnabled;
+
+	ptz_presets_set_source_ndiname_map(name, s->config.ndi_source_name.data());
+	ptz_presets_set_source_context_map(name, (void *)s);
 }
 
 void ndi_source_hidden(void *data)

@@ -21,7 +21,7 @@ public:
 		: QPushButton(parent_),
 		  index(index_)
 	{
-		this->setText(QString::asprintf("BPreset %d", index));
+		this->setText("");
 		this->setSizePolicy(QSizePolicy::Expanding,
 				    QSizePolicy::Expanding);
 		QObject::connect(this, &QPushButton::clicked, this,
@@ -48,7 +48,40 @@ struct ptz_presets_dock {
 	ptz_presets_cb get_names_cb;
 };
 static struct ptz_presets_dock *context;
-void *lookup_ndicontext(std::string name);
+
+template <typename T>
+class MapWrapper {
+public:
+    void set(const std::string& key, const T& value) {
+        map_[key] = value;
+    }
+
+    T get(const std::string& key) const {
+        auto it = map_.find(key);
+        if (it != map_.end()) {
+            return it->second;
+        }
+        return T();
+    }
+
+    std::string reverseLookup(const std::string& value) const {
+        for (const auto& pair : map_) {
+            if (pair.second == value) {
+                return pair.first;
+            }
+        }
+        return "";
+    }
+    void clear() {
+		map_.clear();
+	}
+private:
+    std::map<std::string, T> map_;
+};
+
+static MapWrapper<NDIlib_recv_instance_t> ndi_recv_map;
+static MapWrapper<std::string> source_ndi_map;
+static MapWrapper<void*> source_context_map;
 
 class PTZPresetsWidget : public QWidget {
 protected:
@@ -62,13 +95,18 @@ protected:
 
 		if (context->get_names_cb != nullptr) 
 			preset_names = 
-				context->get_names_cb(lookup_ndicontext(context->current_source_name));
+				context->get_names_cb(source_context_map.get(context->current_source_name));
 
 		for (int b = 0; b < context->nrows * context->ncols; ++b) {
-			context->buttons[b]->setEnabled(context->current_recv != nullptr);
-			if (b < preset_names.size()) {
-				preset_names[b].resize(12);
-				context->buttons[b]->setText(preset_names[b].c_str());
+			if (context->current_recv != nullptr) {
+				context->buttons[b]->setEnabled(true);
+				if (b < preset_names.size()) {
+					preset_names[b].resize(12);
+					context->buttons[b]->setText(preset_names[b].c_str());
+				}
+			} else {
+				context->buttons[b]->setEnabled(false);
+				context->buttons[b]->setText("");
 			}
 		}
 	};
@@ -81,62 +119,26 @@ void ptz_preset_button_pressed(int index)
 }
 void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx);
 
-static std::map<std::string, NDIlib_recv_instance_t> ndi_recv_map;
 void ptz_presets_set_ndiname_recv_map(std::string ndi_name,
 				      NDIlib_recv_instance_t recv) 
 {
 	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_ndiname_recv_map");
 	if (context->ndiLib->recv_ptz_is_supported(recv)) {
-		ndi_recv_map[ndi_name] = recv;
+		ndi_recv_map.set(ndi_name,recv);
 		ptz_presets_set_dock_context(context);
 	}
 }
-
-NDIlib_recv_instance_t lookup_recv(std::string name) {
-	auto it = ndi_recv_map.find(name);
-	if (it != ndi_recv_map.end()) {
-		return it->second;
-	}
-	return nullptr;
-}
-static std::map<std::string, std::string> source_ndi_map;
 void ptz_presets_set_source_ndiname_map(std::string source_name,
 				      std::string ndi_name)
 {
-	source_ndi_map[source_name] = ndi_name;
+	source_ndi_map.set(source_name,ndi_name);
 }
-static std::map<std::string, void *> source_context_map;
 void ptz_presets_set_source_context_map(std::string source_name,
 					void *context)
 {
-	source_context_map[source_name] = context;
-	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_source_context_map, %s size=%d",
-		source_name.c_str(),source_context_map.size());
+	source_context_map.set(source_name,context);
 }
-void* lookup_ndicontext(std::string name)
-{
-	auto it = source_context_map.find(name);
-	if (it != source_context_map.end()) {
-		return it->second;
-	}
-	return nullptr;
-}
-std::string lookup_ndiname(std::string source) {
-	auto it = source_ndi_map.find(source);
-	if (it != source_ndi_map.end()) {
-		return it->second;
-	}
-	return "";
-}
-std::string lookup_sourcename(std::string ndiname)
-{
-	for (const auto &pair : source_ndi_map) {
-		if (pair.second == ndiname) {
-			return pair.first;
-		}
-	}
-	return "";
-}
+
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 {
 	obs_source_t *source = obs_sceneitem_get_source(item);
@@ -148,8 +150,8 @@ bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 	std::vector<std::string> *names =
 		reinterpret_cast<std::vector<std::string> *>(param);
 
-	auto ndi_name = lookup_ndiname(name);
-	auto recv = lookup_recv(ndi_name);
+	auto ndi_name = source_ndi_map.get(name);
+	auto recv = ndi_recv_map.get(ndi_name);
 	if (recv != nullptr)
 		names->push_back(ndi_name);
 
@@ -202,12 +204,12 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 
 	if (!found) {				
 		auto ndi_name = preview_ndinames[0];
-		ctx->current_recv = lookup_recv(ndi_name);
+		ctx->current_recv = ndi_recv_map.get(ndi_name);
 
 		if (ctx->current_recv != nullptr) {
 			blog(LOG_INFO, "[obs-ndi] set source name %s", ndi_name.c_str());
 			ctx->ndi_name = ndi_name;		
-			ctx->current_source_name = lookup_sourcename(ndi_name);
+			ctx->current_source_name = source_ndi_map.reverseLookup(ndi_name);
 		}
 		else {
 			ctx->ndi_name = obs_module_text(
@@ -290,7 +292,7 @@ void ptz_presets_init(const NDIlib_v4 *ndiLib)
 		for (int j = 0; j < context->ncols; ++j) {
 			int ndx = i * context->ncols + j;
 			context->buttons[ndx] =
-				new PresetButton(context->dialog, ndx);
+				new PresetButton(context->dialog, ndx + 1);
 			context->buttons[ndx]->setEnabled(true);
 			grid->addWidget(context->buttons[ndx], i, j);
 		}
