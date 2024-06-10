@@ -115,7 +115,7 @@ protected:
 
 void ptz_preset_button_pressed(int index)
 {
-	if ((index >= 0) && (index < context->nrows * context->ncols))
+	if ((index > 0) && (index <= context->nrows * context->ncols))
 		context->button_pressed = index;
 }
 void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx);
