@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "plugin-main.h"
 #include "Config.h"
+#include "ptz-controller.h"
 
 #define PROP_SOURCE "ndi_source_name"
 #define PROP_BANDWIDTH "ndi_bw_mode"
@@ -84,6 +85,7 @@ typedef struct {
 	float pan;
 	float tilt;
 	float zoom;
+	ptz_controller_t *ptz_controller_context;
 } ptz_t;
 
 typedef struct {
@@ -574,6 +576,7 @@ void *ndi_source_thread(void *data)
 			     obs_source_ndi_receiver_name);
 #endif
 			ndi_receiver = ndiLib->recv_create_v3(&recv_desc);
+
 #if 1
 			blog(LOG_INFO,
 			     "[obs-ndi] ndi_source_thread: '%s' -ndi_receiver = ndiLib->recv_create_v3(&recv_desc)",
@@ -754,6 +757,16 @@ void *ndi_source_thread(void *data)
 							   &video_frame2);
 				continue;
 			}
+
+			if (frame_received == NDIlib_frame_type_status_change) {
+				if (ndiLib->recv_ptz_is_supported(
+					    ndi_receiver)) {
+					ptz_controller_set_recv(
+						config_most_recent.ptz
+							.ptz_controller_context, ndi_receiver);
+				}
+				continue;
+			}
 		}
 	}
 
@@ -919,6 +932,9 @@ void ndi_source_thread_start(ndi_source_t *s)
 {
 	s->running = true;
 	pthread_create(&s->av_thread, nullptr, ndi_source_thread, s);
+
+	s->config.ptz.ptz_controller_context = ptz_controller_init(ndiLib, s->obs_source);
+
 	blog(LOG_INFO,
 	     "[obs-ndi] ndi_source_thread_start: '%s' Started A/V ndi_source_thread for NDI source '%s'",
 	     s->config.ndi_receiver_name.constData(),
@@ -1111,6 +1127,8 @@ void ndi_source_destroy(void *data)
 				  "rename", ndi_source_renamed, s);
 
 	ndi_source_thread_stop(s);
+	
+	ptz_controller_thread_stop(s->config.ptz.ptz_controller_context);
 
 	obs_source_frame_destroy(s->config.blank_frame);
 
@@ -1118,7 +1136,44 @@ void ndi_source_destroy(void *data)
 
 	blog(LOG_INFO, "[obs-ndi] -ndi_source_destroy('%s'...)", name);
 }
+void ndi_source_mouse_click(void *data, const struct obs_mouse_event *event,
+			    int32_t type, bool mouse_up, uint32_t click_count)
+{
+	auto s = (ndi_source_t *)data;
 
+	ptz_controller_mouse_click(s->config.ptz.ptz_controller_context,
+								mouse_up,
+								event->x, event->y);
+
+	blog(LOG_INFO, "[obs-ndi] mouse click x=%d, y=%d, mod=%d, t=%d, up=%d, cc=%d", 
+		event->x, event->y, event->modifiers,
+		type, mouse_up, click_count);
+}
+
+void ndi_source_mouse_move(void *data, const struct obs_mouse_event *event,
+			   bool mouse_leave)
+{
+	auto s = (ndi_source_t *)data;
+
+	ptz_controller_mouse_move(s->config.ptz.ptz_controller_context,
+				   (int)event->modifiers, event->x, event->y, mouse_leave);
+}
+
+void ndi_source_mouse_wheel(void *data, const struct obs_mouse_event *event,
+			    int x_delta, int y_delta)
+{
+	auto s = (ndi_source_t *)data;
+	blog(LOG_INFO, "[obs-ndi] mouse wheel %d, %d, %d, dx=%d, dy=%d", event->x, event->y,
+	     event->modifiers, x_delta, y_delta);
+	ptz_controller_set_wheel(s->config.ptz.ptz_controller_context, x_delta, y_delta);
+}
+void ndi_source_focus(void *data, bool focus)
+{
+	auto s = (ndi_source_t *)data;
+
+	ptz_controller_focus(s->config.ptz.ptz_controller_context,
+				  focus);
+}
 obs_source_info create_ndi_source_info()
 {
 	obs_source_info ndi_source_info = {};
@@ -1126,7 +1181,8 @@ obs_source_info create_ndi_source_info()
 	ndi_source_info.type = OBS_SOURCE_TYPE_INPUT;
 	ndi_source_info.output_flags = OBS_SOURCE_ASYNC_VIDEO |
 				       OBS_SOURCE_AUDIO |
-				       OBS_SOURCE_DO_NOT_DUPLICATE;
+				       OBS_SOURCE_DO_NOT_DUPLICATE |
+					   OBS_SOURCE_INTERACTION;;
 
 	ndi_source_info.get_name = ndi_source_getname;
 	ndi_source_info.get_properties = ndi_source_getproperties;
@@ -1137,8 +1193,13 @@ obs_source_info create_ndi_source_info()
 	ndi_source_info.show = ndi_source_shown;
 	ndi_source_info.update = ndi_source_update;
 	ndi_source_info.hide = ndi_source_hidden;
+	
 	ndi_source_info.deactivate = ndi_source_deactivated;
 	ndi_source_info.destroy = ndi_source_destroy;
+	ndi_source_info.mouse_click = ndi_source_mouse_click;
+	ndi_source_info.mouse_move = ndi_source_mouse_move;
+	ndi_source_info.mouse_wheel = ndi_source_mouse_wheel;
+	ndi_source_info.focus = ndi_source_focus;
 
 	return ndi_source_info;
 }

@@ -12,6 +12,10 @@ include(defaults)
 include(helpers)
 
 add_library(${CMAKE_PROJECT_NAME} MODULE)
+add_subdirectory(lib/visca27)
+set_target_properties(visca27 PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/lib/visca27/${CMAKE_BUILD_TYPE}/visca27.lib)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE visca27)
+
 
 find_package(libobs REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
@@ -50,6 +54,8 @@ target_sources(
           src/preview-output.cpp
           src/Config.cpp
           src/forms/output-settings.cpp
+          src/ptz-controller.cpp
+          src/ptz-controller.h
           src/main-output.h
           src/preview-output.h
           src/Config.h

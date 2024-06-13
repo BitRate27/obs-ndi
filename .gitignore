@@ -4,6 +4,7 @@
 # Except for default project files
 !/.github
 !/build-aux
+!/lib
 !/cmake
 !/data
 !/src

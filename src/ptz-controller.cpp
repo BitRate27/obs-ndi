@@ -1,0 +1,152 @@
+#include <obs.h>
+#include <obs-module.h>
+#include <obs-frontend-api.h>
+#include "ptz-controller.h"
+#include <chrono>
+#include <pthread.h>
+#include <thread>
+#include <regex>
+#include <Processing.NDI.Lib.h>
+
+std::string extractIPAddress(const std::string &str)
+{
+	std::regex ipRegex(
+		"(\\b(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\."
+		"(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\b)");
+	std::smatch match;
+	if (std::regex_search(str, match, ipRegex)) {
+		return match.str();
+	}
+	return "";
+}
+void ptz_controller_set_wheel(ptz_controller_t *s, int dx, int dy)
+{
+	s->x_delta += dx ;
+	s->y_delta += dy; 
+	blog(LOG_INFO, "[obs-ndi] ptz_controller_set_wheel [%d,%d]", s->x_delta,
+	     s->y_delta);
+}
+void ptz_controller_mouse_click(ptz_controller_t *s, bool mouse_up, int x, int y)
+{
+	s->mouse_down = !mouse_up;
+	if (s->mouse_down) {
+		s->x_start = x;
+		s->y_start = y;
+		visca_error_t err = s->visca.getPanTilt(s->pt_start);
+		blog(LOG_INFO, "[obs-ndi] ptz_controller_mouse_click err=%d",
+		     err);
+	}
+	blog(LOG_INFO, "[obs-ndi] ptz_controller_mouse_click xy[%d,%d] pt[%d,%d]", s->x_start,
+	     s->y_start, s->pt_start.value1, s->pt_start.value2);
+}
+void ptz_controller_mouse_move(ptz_controller_t *s, int mods, int x,
+				int y, bool mouse_leave)
+{
+	
+	if (s->mouse_down) {
+		int dx = x - s->x_start;
+		int dy = y - s->y_start;
+
+		visca_tuple_t dest = {
+			s->pt_start.value1 + (dx * s->h_flip),
+			s->pt_start.value2 + (dy * s->h_flip)
+		};
+		visca_error_t err = s->visca.setAbsolutePanTilt(dest);	
+		blog(LOG_INFO,
+	     "[obs-ndi] ptz_controller_mouse_move xy[%d,%d] pt[%d,%d]",
+	     s->x_start, s->y_start, dest.value1, dest.value2);
+	}
+}
+void ptz_controller_focus(ptz_controller_t *s, bool focus) {
+	if (focus) {
+		bool flip;
+		visca_error_t errh = s->visca.getHorizontalFlip(flip);
+		s->h_flip = flip ? -1 : 1;
+		visca_error_t errv = s->visca.getVerticalFlip(flip);
+		s->v_flip = flip ? -1 : 1;
+		visca_error_t errz = s->visca.getZoomLevel(s->zoom); 
+		blog(LOG_INFO,
+		     "[obs-ndi] ptz_controller_focis h=%d, v=%d, e=%d, zoom=%d",
+		     errh, errv, errz, s->zoom);
+	}
+};
+void *ptz_controller_thread(void *data)
+{
+    auto s = (ptz_controller_t *)data;
+
+    while (s->running) {
+        if (s->ndi_recv) {
+		    if (s->y_delta != 0) {
+				blog(LOG_INFO, "[obs-ndi] delta_y");
+
+				int newZoom = s->zoom + s->y_delta;
+				if (newZoom < 0)
+					newZoom = 0;
+				if (newZoom > 16384)
+					newZoom = 16384;
+				blog(LOG_INFO,
+				     "[obs-ndi] ptz_controller zooming [%d] %d %d",
+				     s->y_delta, s->zoom, newZoom);
+				visca_error_t err = s->visca.setZoomLevel(newZoom); 
+
+				blog(LOG_INFO,
+				     "[obs-ndi] ptz_controller zoomed %d",
+				     err);
+				s->zoom = newZoom;
+			    s->y_delta = 0;
+		    }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    };
+    return s;
+}
+
+void ptz_controller_thread_start(ptz_controller_t *s)
+{
+	s->running = true;
+	pthread_create(&s->ptz_thread, nullptr, ptz_controller_thread, s);
+	blog(LOG_INFO, "[obs-ndi] ptz_controller_thread_start");
+}
+
+void ptz_controller_set_recv(ptz_controller_t *s, NDIlib_recv_instance_t recv)
+{
+	s->ndi_recv = nullptr;
+	if (recv) { 		
+		s->ndi_recv = recv;
+		if (s->ndiLib->recv_ptz_is_supported(recv)) {
+			const char *p_url =
+				s->ndiLib->recv_get_web_control(recv);
+			blog(LOG_INFO,
+			     "[obs-ndi] ptz_controller_set_recv url=%s", p_url);
+			sprintf_s(s->ip,100,"%s",extractIPAddress(std::string(p_url)).c_str());		
+			s->ndiLib->recv_free_string(recv, p_url);
+			
+		} else {
+			sprintf_s(s->ip,100,"127.0.0.1");
+		}
+		s->visca.connectCamera(std::string(s->ip),5678);
+		blog(LOG_INFO, "[obs-ndi] ptz_controller_set_recv ip=%s",s->ip);
+
+		if (!s->running) ptz_controller_thread_start(s);
+	}
+}
+
+void ptz_controller_thread_stop(ptz_controller_t *s)
+{
+    if (s->running) {
+        s->running = false;
+        pthread_join(s->ptz_thread, NULL);
+    }
+    bfree(s);
+}
+
+ptz_controller_t *
+ptz_controller_init(const NDIlib_v4 *ndiLib, obs_source_t *obs_source)
+{
+    auto context = (ptz_controller_t *)bzalloc(sizeof(ptz_controller_t));
+    context->ndiLib = ndiLib;
+    context->obs_source = obs_source;
+    blog(LOG_INFO, "[obs-ndi] obs_module_load: ptz_controller_init");
+    context->running = false;
+    return context;
+}
