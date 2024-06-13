@@ -1,0 +1,3 @@
+[submodule "lib/visca27"]
+	path = lib/visca27
+	url = https://github.com/BitRate27/visca27.git
