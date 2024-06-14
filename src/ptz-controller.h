@@ -13,9 +13,11 @@ typedef struct {
 	short y_delta;
 	short x_start;
 	short y_start;
+	short x_move;
+	short y_move;
 	short zoom;
-	int h_flip;
-	int v_flip;
+	float pixels_to_pan;
+	float pixels_to_tilt;
 	visca_tuple_t pt_start;
 	bool mouse_down;
 	char ip[100];
