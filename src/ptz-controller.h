@@ -20,6 +20,7 @@ typedef struct {
 	float pixels_to_tilt;
 	visca_tuple_t pt_start;
 	bool mouse_down;
+	bool drag_start;
 	char ip[100];
 	ViscaAPI visca;
 } ptz_controller_t;

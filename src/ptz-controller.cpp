@@ -46,14 +46,8 @@ void ptz_controller_mouse_click(ptz_controller_t *s, bool mouse_up, int x, int y
 		s->y_start = y;
 		s->x_move = x;
 		s->y_move = y;
-		visca_error_t err = s->visca.getPanTilt(s->pt_start);
-		visca_error_t errz = s->visca.getZoomLevel(s->zoom);
-		s->pixels_to_pan = ptz_pixels_to_pan_ratio(s->zoom);
-		s->pixels_to_tilt = ptz_pixels_to_tilt_ratio(s->zoom);
-			blog(LOG_INFO, "[obs-ndi] ptz_controller_mouse_click start xy[%d,%d] pt[%d,%d]", s->x_start,
-	     s->y_start, s->pt_start.value1, s->pt_start.value2);
+		s->drag_start = true;
 	}
-
 }
 
 void ptz_controller_mouse_move(ptz_controller_t *s, int mods, int x,
@@ -94,37 +88,29 @@ void *ptz_controller_thread(void *data)
     while (s->running) {
 	    if (s->ndi_recv) {
 		    if (s->y_delta != 0) {
-			    blog(LOG_INFO, "[obs-ndi] delta_y");
-
-			    int newZoom = s->zoom + (s->y_delta * 4);
-			    if (newZoom < 0)
-				    newZoom = 0;
-			    if (newZoom > 16384)
-				    newZoom = 16384;
+			    int newZoom = std::clamp(s->zoom + (s->y_delta * 4),
+						     0, 16384);
 			    blog(LOG_INFO,
 				 "[obs-ndi] ptz_controller zooming [%d] %d %d",
 				 s->y_delta, s->zoom, newZoom);
 
-			    s->zoom = newZoom;
-			    s->pixels_to_pan = ptz_pixels_to_pan_ratio(s->zoom);
-			    s->pixels_to_tilt =
-				    ptz_pixels_to_tilt_ratio(s->zoom);			    
-				visca_error_t err =
-				    s->visca.getPanTilt(s->pt_start);
-			    int dx = s->x_start - (1920/2);
-			    int dy = s->y_start - (1080/2);
-
-			    visca_tuple_t dest = {
-				    s->pt_start.value1 +
-					    (int)((float)dx * s->pixels_to_pan),
-				    s->pt_start.value2 +
-					    (int)((float)dy *
-						  s->pixels_to_tilt)};
-
-			    err = s->visca.setAbsolutePanTilt(dest);			    
-				err = s->visca.setZoomLevel(newZoom);
+			    s->zoom = newZoom;			    
+				auto err = s->visca.setZoomLevel(newZoom);
 
 			    s->y_delta = 0;
+		    }
+		    if (s->drag_start) {
+			    auto err =
+				    s->visca.getPanTilt(s->pt_start);
+			    auto errz = s->visca.getZoomLevel(s->zoom);
+			    s->pixels_to_pan = ptz_pixels_to_pan_ratio(s->zoom);
+			    s->pixels_to_tilt =
+				    ptz_pixels_to_tilt_ratio(s->zoom);
+			    blog(LOG_INFO,
+				 "[obs-ndi] ptz_controller_mouse_click start drag err=%d, errz=%d, xy[%d,%d] pt[%d,%d]",
+				 err, errz, s->x_start, s->y_start, s->pt_start.value1,
+				 s->pt_start.value2);
+			    s->drag_start = false;
 		    }
 		    if (s->mouse_down) {
 			    int dx = s->x_start - s->x_move;
@@ -136,15 +122,15 @@ void *ptz_controller_thread(void *data)
 				    s->pt_start.value2 +
 					    (int)((float)dy *
 						  s->pixels_to_tilt)};
-			    visca_error_t err =
+			    auto err =
 				    s->visca.setAbsolutePanTilt(dest);
 			    blog(LOG_INFO,
 				 "[obs-ndi] ptz_controller_mouse_move xy[%d,%d] pt[%d,%d] px[%6.4f,%6.4f]",
 				 s->x_start, s->y_start, dest.value1,
-				 dest.value2, s->pixels_to_pan);
+				 dest.value2, s->pixels_to_pan, s->pixels_to_tilt);
 		    }
 	    }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     };
     return s;
 }
