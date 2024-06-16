@@ -30,7 +30,7 @@ public:
         this->setSizePolicy(QSizePolicy::Expanding,
                             QSizePolicy::Expanding);
         QObject::connect(this, &QPushButton::clicked, this,
-                         &PresetButton::PresetButtonClicked);
+                         &PresetButton::PresetButtonClicked);						 
     }
     inline void PresetButtonClicked() { ptz_preset_button_pressed(index); }
     int index;
@@ -85,7 +85,6 @@ private:
 
 static MapWrapper<NDIlib_recv_instance_t> ndi_recv_map;
 static MapWrapper<std::string> source_ndi_map;
-static MapWrapper<void*> source_context_map;
 
 class PTZPresetsWidget : public QWidget {
 protected:
@@ -139,8 +138,22 @@ bool ptz_presets_property_modified(void *priv, obs_properties_t *props,
 }
 void ptz_preset_button_pressed(int index)
 {
-	if ((index > 0) && (index <= context->nrows * context->ncols))
+	if ((context->current_recv != nullptr) &&
+		(index > 0) && 
+		(index <= context->nrows * context->ncols))
 		context->button_pressed = index;
+}
+void ptz_presets_hotkey_function(void* data, obs_hotkey_id id, obs_hotkey_t* hotkey, bool pressed)
+{
+    if (pressed) {
+		PresetButton *button = static_cast<PresetButton*>(priv);
+        ptz_preset_button_pressed(button->index);
+    }
+}
+
+void registerHotkey()
+{
+    obs_hotkey_id hotkeyId = obs_hotkey_register_frontend("my_hotkey", "My Hotkey", hotkeyFunction, nullptr);
 }
 void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx);
 
@@ -349,6 +362,11 @@ void ptz_presets_init(const NDIlib_v4 *ndiLib)
 				new PresetButton(context->dialog, ndx + 1);
 			context->buttons[ndx]->setEnabled(true);
 			grid->addWidget(context->buttons[ndx], i, j);
+			obs_hotkey_id hotkeyId = 
+				obs_hotkey_register_frontend(QString("PTZPreset%1").arg(ndx+1).toUtf8(),
+											 QString("PTZ Preset %1").arg(ndx+1).toUtf8(), 
+											 ptz_presets_hotkey_function, 
+											 (void*)context->buttons[ndx]);
 		}
 	}
 	context->dialog->setLayout(grid);
