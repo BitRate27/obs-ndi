@@ -13,6 +13,11 @@
 #include <qlineedit.h>
 #include "ptz-presets-dock.h"
 
+#define PROP_PRESET "preset%1"
+#define PROP_NPRESETS 9
+
+#define MAX_PRESET_NAME_LENGTH 12
+
 void ptz_preset_button_pressed(int);
 
 class PresetButton : public QPushButton {
@@ -37,7 +42,6 @@ struct ptz_presets_dock {
 	pthread_t ptz_presets_thread;
 	NDIlib_recv_instance_t current_recv;
 	std::string current_source_name;
-	bool scene_changed;
 	std::string ndi_name;
 	QWidget *dialog;
 	QLabel *label;
@@ -92,27 +96,47 @@ protected:
 		QPainter painter(this);
 
 		context->label->setText(context->ndi_name.c_str());
-		std::vector<std::string> preset_names = {};
+		obs_source_t* source = obs_get_source_by_name(context->current_source_name.c_str());
+		obs_data_t *settings = obs_source_get_settings(source);
 
-		if (context->get_names_cb != nullptr) 
-			preset_names = 
-				context->get_names_cb(source_context_map.get(context->current_source_name));
-
-		for (int b = 0; b < context->nrows * context->ncols; ++b) {
+		for (int b = 0; b < PROP_NPRESETS; ++b) {
 			if (context->current_recv != nullptr) {
 				context->buttons[b]->setEnabled(true);
-				if (b < (int)preset_names.size()) {
-					preset_names[b].resize(12);
-					context->buttons[b]->setText(preset_names[b].c_str());
-				}
+				context->buttons[b]->setText(
+					obs_data_get_string(
+						settings,
+						QString(PROP_PRESET)
+							.arg(b+1)
+							.toUtf8()));
 			} else {
 				context->buttons[b]->setEnabled(false);
 				context->buttons[b]->setText("");
 			}
 		}
+
+		obs_data_release(settings);
 	};
 };
 
+bool ptz_presets_property_modified(void *priv, obs_properties_t *props,
+		       obs_property_t *property, obs_data_t *settings )
+{
+	bool changed = false;
+	PresetButton *button = static_cast<PresetButton*>(priv);
+    const char* property_name = obs_property_name(property);
+    const char* value = obs_data_get_string(settings, property_name);
+    if (strlen(value) > MAX_PRESET_NAME_LENGTH) {
+	    std::string temp = value;
+	    obs_data_set_string(settings, obs_property_name(property),
+				temp.substr(0, MAX_PRESET_NAME_LENGTH).c_str());
+	    button->setText(temp.c_str());
+	    return true;
+    }
+
+	button->setText(value);
+
+    return false;
+}
 void ptz_preset_button_pressed(int index)
 {
 	if ((index > 0) && (index <= context->nrows * context->ncols))
@@ -124,20 +148,15 @@ void ptz_presets_set_ndiname_recv_map(std::string ndi_name,
 				      NDIlib_recv_instance_t recv) 
 {
 	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_ndiname_recv_map");
-	if (context->ndiLib->recv_ptz_is_supported(recv)) {
+	//if (context->ndiLib->recv_ptz_is_supported(recv)) {
 		ndi_recv_map.set(ndi_name,recv);
 		ptz_presets_set_dock_context(context);
-	}
+	//}
 }
 void ptz_presets_set_source_ndiname_map(std::string source_name,
 				      std::string ndi_name)
 {
 	source_ndi_map.set(source_name,ndi_name);
-}
-void ptz_presets_set_source_context_map(std::string source_name,
-					void *context)
-{
-	source_context_map.set(source_name,context);
 }
 
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
@@ -165,7 +184,34 @@ void CreateListOfNDINames(obs_scene_t *scene,
 {
 	obs_scene_enum_items(scene, EnumerateSceneItems, &names);
 }
+bool ptz_presets_text_length_validation_callback(obs_properties_t *props,
+						 obs_property_t *property,
+						 obs_data_t *settings, void *priv)
+{
+	const char *text =
+		obs_data_get_string(settings, obs_property_name(property));
+	if (strlen(text) > MAX_PRESET_NAME_LENGTH) {
+		std::string temp = text;
+		obs_data_set_string(
+			settings, obs_property_name(property),
+			temp.substr(0, MAX_PRESET_NAME_LENGTH).c_str());
+		return false;
+	}
+	return true;
+}
+void ptz_presets_add_properties(obs_properties_t *group_ptz){
+	for (int pp = 1; pp <= PROP_NPRESETS; pp++) {
+		auto p = obs_properties_add_text(
+			group_ptz, QString(PROP_PRESET).arg(pp).toUtf8(),
+			QString("Preset %1").arg(pp).toUtf8(),
+			OBS_TEXT_DEFAULT);
 
+		obs_property_set_modified_callback2(
+			p, 
+			(obs_property_modified2_t)ptz_presets_property_modified, 
+			(void*)context->buttons[pp-1]);
+	}
+};
 void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx) 
 {
 	obs_source_t *preview_source =
@@ -264,8 +310,14 @@ void ptz_presets_thread_stop(ptz_presets_dock *s)
 		pthread_join(s->ptz_presets_thread, NULL);
 	}
 }
-void ptz_presets_set_preset_names_cb(ptz_presets_cb callback){
-	context->get_names_cb = callback;
+
+void ptz_presets_set_defaults(obs_data_t *settings)
+{
+	for (int pp = 1; pp <= PROP_NPRESETS; pp++) {
+		obs_data_set_default_string(
+			settings, QString(PROP_PRESET).arg(pp).toUtf8(),
+			QString("Preset %1").arg(pp).toUtf8());
+	}
 }
 void ptz_presets_init(const NDIlib_v4 *ndiLib)
 {
