@@ -49,7 +49,6 @@ struct ptz_presets_dock {
 	int ncols;
 	int nrows;
 	int button_pressed;
-	ptz_presets_cb get_names_cb;
 };
 static struct ptz_presets_dock *context;
 
@@ -79,7 +78,11 @@ public:
     void clear() {
 		map_.clear();
 	}
-private:
+    int size() { 
+		return (int)map_.size();
+	};
+
+    private:
     std::map<std::string, T> map_;
 };
 
@@ -143,7 +146,7 @@ void ptz_preset_button_pressed(int index)
 		(index <= context->nrows * context->ncols))
 		context->button_pressed = index;
 }
-void ptz_presets_hotkey_function(void* data, obs_hotkey_id id, obs_hotkey_t* hotkey, bool pressed)
+void ptz_presets_hotkey_function(void* priv, obs_hotkey_id id, obs_hotkey_t* hotkey, bool pressed)
 {
     if (pressed) {
 		PresetButton *button = static_cast<PresetButton*>(priv);
@@ -151,25 +154,26 @@ void ptz_presets_hotkey_function(void* data, obs_hotkey_id id, obs_hotkey_t* hot
     }
 }
 
-void registerHotkey()
-{
-    obs_hotkey_id hotkeyId = obs_hotkey_register_frontend("my_hotkey", "My Hotkey", hotkeyFunction, nullptr);
-}
 void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx);
 
 void ptz_presets_set_ndiname_recv_map(std::string ndi_name,
 				      NDIlib_recv_instance_t recv) 
 {
-	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_ndiname_recv_map");
+
 	//if (context->ndiLib->recv_ptz_is_supported(recv)) {
 		ndi_recv_map.set(ndi_name,recv);
 		ptz_presets_set_dock_context(context);
 	//}
+	blog(LOG_INFO,
+		"[obs-ndi] ptz_presets_set_ndiname_recv_map [%s], n=%d",
+		ndi_name.c_str(),ndi_recv_map.size());
 }
 void ptz_presets_set_source_ndiname_map(std::string source_name,
 				      std::string ndi_name)
 {
 	source_ndi_map.set(source_name,ndi_name);
+	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_source_ndiname_map [%s], n=%d",
+	     source_name.c_str(), source_ndi_map.size());
 }
 
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
@@ -303,6 +307,9 @@ void *ptz_presets_thread(void *data)
 		if (s->current_recv && s->button_pressed >= 0) {
 			s->ndiLib->recv_ptz_recall_preset(s->current_recv,
 							  s->button_pressed, 5);
+			blog(LOG_INFO,
+			     "[obs-ndi] ptz_presets_button_pressed [%d]",
+			     s->button_pressed);
 			s->button_pressed = -1;
 		}
 
