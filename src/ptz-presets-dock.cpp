@@ -41,7 +41,7 @@ struct ptz_presets_dock {
 	const NDIlib_v4 *ndiLib;
 	pthread_t ptz_presets_thread;
 	NDIlib_recv_instance_t current_recv;
-	std::string current_source_name;
+	obs_source_t *current_source;
 	std::string ndi_name;
 	QWidget *dialog;
 	QLabel *label;
@@ -52,42 +52,37 @@ struct ptz_presets_dock {
 };
 static struct ptz_presets_dock *context;
 
-template <typename T>
-class MapWrapper {
+template<typename K, typename V> class MapWrapper {
 public:
-    void set(const std::string& key, const T& value) {
-        map_[key] = value;
-    }
+	void set(const K &key, const V &value) { map_[key] = value; }
 
-    T get(const std::string& key) const {
-        auto it = map_.find(key);
-        if (it != map_.end()) {
-            return it->second;
-        }
-        return T();
-    }
-
-    std::string reverseLookup(const std::string& value) const {
-        for (const auto& pair : map_) {
-            if (pair.second == value) {
-                return pair.first;
-            }
-        }
-        return "";
-    }
-    void clear() {
-		map_.clear();
+	V get(const K &key) const
+	{
+		auto it = map_.find(key);
+		if (it != map_.end()) {
+			return it->second;
+		}
+		return V();
 	}
-    int size() { 
-		return (int)map_.size();
-	};
 
-    private:
-    std::map<std::string, T> map_;
+	K reverseLookup(const V &value) const
+	{
+		for (const auto &pair : map_) {
+			if (pair.second == value) {
+				return pair.first;
+			}
+		}
+		return K();
+	}
+	void clear() { map_.clear(); }
+	int size() { return (int)map_.size(); };
+
+private:
+	std::map<K, V> map_;
 };
 
-static MapWrapper<NDIlib_recv_instance_t> ndi_recv_map;
-static MapWrapper<std::string> source_ndi_map;
+static MapWrapper<std::string, NDIlib_recv_instance_t> ndi_recv_map;
+static MapWrapper<obs_source_t *, std::string> source_ndi_map;
 
 class PTZPresetsWidget : public QWidget {
 protected:
@@ -98,7 +93,7 @@ protected:
 		QPainter painter(this);
 
 		context->label->setText(context->ndi_name.c_str());
-		obs_source_t* source = obs_get_source_by_name(context->current_source_name.c_str());
+		obs_source_t* source = context->current_source;
 		obs_data_t *settings = obs_source_get_settings(source);
 
 		for (int b = 0; b < PROP_NPRESETS; ++b) {
@@ -164,16 +159,11 @@ void ptz_presets_set_ndiname_recv_map(std::string ndi_name,
 		ndi_recv_map.set(ndi_name,recv);
 		ptz_presets_set_dock_context(context);
 	//}
-	blog(LOG_INFO,
-		"[obs-ndi] ptz_presets_set_ndiname_recv_map [%s], n=%d",
-		ndi_name.c_str(),ndi_recv_map.size());
 }
-void ptz_presets_set_source_ndiname_map(std::string source_name,
+void ptz_presets_set_source_ndiname_map(obs_source_t *source,
 				      std::string ndi_name)
 {
-	source_ndi_map.set(source_name,ndi_name);
-	blog(LOG_INFO, "[obs-ndi] ptz_presets_set_source_ndiname_map [%s], n=%d",
-	     source_name.c_str(), source_ndi_map.size());
+	source_ndi_map.set(source,ndi_name);
 }
 
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
@@ -183,12 +173,10 @@ bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 	
 	if (!obs_source_showing(source)) return true; // Only care if it is showing
 
-	const char *name = obs_source_get_name(source);
-
 	std::vector<std::string> *names =
 		reinterpret_cast<std::vector<std::string> *>(param);
 
-	auto ndi_name = source_ndi_map.get(name);
+	auto ndi_name = source_ndi_map.get(source);
 	auto recv = ndi_recv_map.get(ndi_name);
 	if (recv != nullptr)
 		names->push_back(ndi_name);
@@ -228,7 +216,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 	
 	if ((preview_source != nullptr) && (preview_ndinames.size() == 0)) {
 		ctx->current_recv = nullptr;
-		ctx->current_source_name = "";
+		ctx->current_source = nullptr;
 		ctx->ndi_name = obs_module_text(
 			"NDIPlugin.PTZPresetsDock.NotSupported");
 		return;
@@ -248,7 +236,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 					    program_ndinames.end(), name);
 			if (it != program_ndinames.end()) {
 				ctx->current_recv = nullptr;
-				ctx->current_source_name = "";
+				ctx->current_source = nullptr;
 				ctx->ndi_name = obs_module_text(
 					"NDIPlugin.PTZPresetsDock.OnProgram");
 				return;
@@ -265,12 +253,12 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 
 	if (ctx->current_recv != nullptr) {
 		ctx->ndi_name = ndi_name;		
-		ctx->current_source_name = source_ndi_map.reverseLookup(ndi_name);
+		ctx->current_source = source_ndi_map.reverseLookup(ndi_name);
 	}
 	else {
 		ctx->ndi_name = obs_module_text(
 			"NDIPlugin.PTZPresetsDock.NotSupported");
-		ctx->current_source_name = "";
+		ctx->current_source = nullptr;
 	}
 }
 

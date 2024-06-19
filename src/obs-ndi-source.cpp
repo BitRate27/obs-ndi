@@ -558,7 +558,7 @@ void *ndi_source_thread(void *data)
 				     recv_desc.source_to_connect_to.p_ndi_name);
 				break;
 			}
-			ptz_presets_set_source_ndiname_map(obs_source_get_name(obs_source),
+			ptz_presets_set_source_ndiname_map(obs_source,
 				recv_desc.source_to_connect_to.p_ndi_name);
 			ptz_presets_set_ndiname_recv_map(
 				recv_desc.source_to_connect_to.p_ndi_name,
@@ -737,7 +737,7 @@ void *ndi_source_thread(void *data)
 						.p_ndi_name,
 					ndi_receiver);
 				ptz_presets_set_source_ndiname_map(
-					obs_source_get_name(obs_source),
+					obs_source,
 					recv_desc.source_to_connect_to
 						.p_ndi_name);
 				continue;
@@ -932,7 +932,8 @@ void ndi_source_update(void *data, obs_data_t *settings)
 
 	config.ndi_source_name = obs_data_get_string(settings, PROP_SOURCE);
 	config.bandwidth = (int)obs_data_get_int(settings, PROP_BANDWIDTH);
-	ptz_presets_set_source_ndiname_map(name, config.ndi_source_name.data());
+	ptz_presets_set_source_ndiname_map(obs_source,
+					   config.ndi_source_name.data());
 
 	config.sync_mode = (int)obs_data_get_int(settings, PROP_SYNC);
 	// if sync mode is set to the unsupported "Internal" mode, set it
@@ -1010,7 +1011,7 @@ void ndi_source_shown(void *data)
 	blog(LOG_INFO, "[obs-ndi] ndi_source_shown('%s'...)", name);
 	s->config.tally.on_preview = (Config::Current())->TallyPreviewEnabled;
 
-	ptz_presets_set_source_ndiname_map(name, s->config.ndi_source_name.data());
+	ptz_presets_set_source_ndiname_map(s->obs_source, s->config.ndi_source_name.data());
 }
 
 void ndi_source_hidden(void *data)
