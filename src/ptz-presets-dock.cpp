@@ -74,6 +74,7 @@ public:
 		}
 		return K();
 	}
+	void remove(const K &key) { map_.erase(key); }
 	void clear() { map_.clear(); }
 	int size() { return (int)map_.size(); };
 
@@ -166,6 +167,16 @@ void ptz_presets_set_source_ndiname_map(obs_source_t *source,
 	source_ndi_map.set(source,ndi_name);
 }
 
+void ptz_presets_source_deleted(obs_source_t *source){
+	source_ndi_map.remove(source);
+	if (context->current_source == source) {
+		context->current_source = nullptr;
+		context->current_recv = nullptr;
+		context->ndi_name = obs_module_text(
+			"NDIPlugin.PTZPresetsDock.NotSupported");
+	}
+};
+
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 {
 	if (!scene) return false;
@@ -203,6 +214,7 @@ void ptz_presets_add_properties(obs_properties_t *group_ptz){
 			(void*)context->buttons[pp-1]);
 	}
 };
+
 void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx) 
 {
 	obs_source_t *preview_source =

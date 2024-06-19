@@ -1073,6 +1073,8 @@ void ndi_source_destroy(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] +ndi_source_destroy('%s'...)", name);
 
+	ptz_presets_source_deleted(s->obs_source);
+
 	signal_handler_disconnect(obs_source_get_signal_handler(s->obs_source),
 				  "rename", ndi_source_renamed, s);
 
