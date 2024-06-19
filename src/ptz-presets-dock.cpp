@@ -201,21 +201,7 @@ void CreateListOfNDINames(obs_scene_t *scene,
 {
 	obs_scene_enum_items(scene, EnumerateSceneItems, &names);
 }
-bool ptz_presets_text_length_validation_callback(obs_properties_t *props,
-						 obs_property_t *property,
-						 obs_data_t *settings, void *priv)
-{
-	const char *text =
-		obs_data_get_string(settings, obs_property_name(property));
-	if (strlen(text) > MAX_PRESET_NAME_LENGTH) {
-		std::string temp = text;
-		obs_data_set_string(
-			settings, obs_property_name(property),
-			temp.substr(0, MAX_PRESET_NAME_LENGTH).c_str());
-		return false;
-	}
-	return true;
-}
+
 void ptz_presets_add_properties(obs_properties_t *group_ptz){
 	for (int pp = 1; pp <= PROP_NPRESETS; pp++) {
 		auto p = obs_properties_add_text(
@@ -240,7 +226,7 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 	std::vector<std::string> preview_ndinames;
 	CreateListOfNDINames(preview_scene, preview_ndinames);
 	
-	if (preview_ndinames.size() == 0) {
+	if ((preview_source != nullptr) && (preview_ndinames.size() == 0)) {
 		ctx->current_recv = nullptr;
 		ctx->current_source_name = "";
 		ctx->ndi_name = obs_module_text(
@@ -255,32 +241,36 @@ void ptz_presets_set_dock_context(struct ptz_presets_dock *ctx)
 	std::vector<std::string> program_ndinames;
 	CreateListOfNDINames(program_scene, program_ndinames);
 
-	bool found = false;
-	for (const std::string &name : preview_ndinames) {
-		auto it = std::find(program_ndinames.begin(), program_ndinames.end(), name);
-		if (it != program_ndinames.end()) {
-			ctx->current_recv = nullptr;
-			ctx->current_source_name = "";
-			ctx->ndi_name = obs_module_text("NDIPlugin.PTZPresetsDock.OnProgram");
-			found = true;
-			break;
+	if (preview_source != nullptr) {
+		// Check if preview source also on program
+		for (const std::string &name : preview_ndinames) {
+			auto it = std::find(program_ndinames.begin(),
+					    program_ndinames.end(), name);
+			if (it != program_ndinames.end()) {
+				ctx->current_recv = nullptr;
+				ctx->current_source_name = "";
+				ctx->ndi_name = obs_module_text(
+					"NDIPlugin.PTZPresetsDock.OnProgram");
+				return;
+			}
 		}
 	}
+	
+	// If there are preview ndi sources with ptz support, then use the first one, 
+	// otherwise we are not in Studio mode, so allow preset recall on program
+	// source if has ptz support.
+	std::string ndi_name = (preview_ndinames.size() > 0) ? preview_ndinames[0] : 
+		(program_ndinames.size() > 0) ? program_ndinames[0] : "";
+	ctx->current_recv = ndi_recv_map.get(ndi_name);
 
-	if (!found) {				
-		std::string ndi_name = preview_ndinames[0];
-		ctx->current_recv = ndi_recv_map.get(ndi_name);
-
-		if (ctx->current_recv != nullptr) {
-			blog(LOG_INFO, "[obs-ndi] set source name %s", ndi_name.c_str());
-			ctx->ndi_name = ndi_name;		
-			ctx->current_source_name = source_ndi_map.reverseLookup(ndi_name);
-		}
-		else {
-			ctx->ndi_name = obs_module_text(
-				"NDIPlugin.PTZPresetsDock.NotSupported");
-			ctx->current_source_name = "";
-		}
+	if (ctx->current_recv != nullptr) {
+		ctx->ndi_name = ndi_name;		
+		ctx->current_source_name = source_ndi_map.reverseLookup(ndi_name);
+	}
+	else {
+		ctx->ndi_name = obs_module_text(
+			"NDIPlugin.PTZPresetsDock.NotSupported");
+		ctx->current_source_name = "";
 	}
 }
 
