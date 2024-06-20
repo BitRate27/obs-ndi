@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "plugin-main.h"
 #include "Config.h"
+#include "ptz-presets-dock.h"
 
 #define PROP_SOURCE "ndi_source_name"
 #define PROP_BANDWIDTH "ndi_bw_mode"
@@ -353,6 +354,9 @@ obs_properties_t *ndi_source_getproperties(void *)
 	obs_properties_add_float_slider(
 		group_ptz, PROP_ZOOM,
 		obs_module_text("NDIPlugin.SourceProps.Zoom"), 0.0, 1.0, 0.001);
+
+	ptz_presets_add_properties(group_ptz);
+
 	obs_properties_add_group(props, PROP_PTZ,
 				 obs_module_text("NDIPlugin.SourceProps.PTZ"),
 				 OBS_GROUP_CHECKABLE, group_ptz);
@@ -401,6 +405,7 @@ void ndi_source_getdefaults(obs_data_t *settings)
 				 PROP_YUV_SPACE_BT709);
 	obs_data_set_default_int(settings, PROP_LATENCY, PROP_LATENCY_NORMAL);
 	obs_data_set_default_bool(settings, PROP_AUDIO, true);
+	ptz_presets_set_defaults(settings);
 }
 
 void ndi_source_thread_process_audio2(ndi_source_config_t *config,
@@ -586,11 +591,15 @@ void *ndi_source_thread(void *data)
 				     recv_desc.source_to_connect_to.p_ndi_name);
 				break;
 			}
-
+			ptz_presets_set_source_ndiname_map(obs_source,
+				recv_desc.source_to_connect_to.p_ndi_name);
+			ptz_presets_set_ndiname_recv_map(
+				recv_desc.source_to_connect_to.p_ndi_name,
+				ndi_receiver);
+			
 			if (config_most_recent.framesync_enabled) {
 				timestamp_audio = 0;
 				timestamp_video = 0;
-
 #if 1
 				blog(LOG_INFO,
 				     "[obs-ndi] ndi_source_thread: '%s' +ndi_frame_sync = ndiLib->framesync_create(ndi_receiver)",
@@ -752,6 +761,18 @@ void *ndi_source_thread(void *data)
 					obs_source, &obs_video_frame);
 				ndiLib->recv_free_video_v2(ndi_receiver,
 							   &video_frame2);
+				continue;
+			}
+
+			if (frame_received == NDIlib_frame_type_status_change) {
+				ptz_presets_set_ndiname_recv_map(
+					recv_desc.source_to_connect_to
+						.p_ndi_name,
+					ndi_receiver);
+				ptz_presets_set_source_ndiname_map(
+					obs_source,
+					recv_desc.source_to_connect_to
+						.p_ndi_name);
 				continue;
 			}
 		}
@@ -948,6 +969,8 @@ void ndi_source_update(void *data, obs_data_t *settings)
 
 	config.ndi_source_name = obs_data_get_string(settings, PROP_SOURCE);
 	config.bandwidth = (int)obs_data_get_int(settings, PROP_BANDWIDTH);
+	ptz_presets_set_source_ndiname_map(obs_source,
+					   config.ndi_source_name.data());
 
 	const char *behavior = obs_data_get_string(settings, PROP_BEHAVIOR);
 	if (strcmp(behavior, PROP_BEHAVIOR_DISCONNECT) == 0) {
@@ -1035,6 +1058,8 @@ void ndi_source_shown(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] ndi_source_shown('%s'...)", name);
 	s->config.tally.on_preview = (Config::Current())->TallyPreviewEnabled;
+
+	ptz_presets_set_source_ndiname_map(s->obs_source, s->config.ndi_source_name.data());
 }
 
 void ndi_source_hidden(void *data)
@@ -1106,6 +1131,8 @@ void ndi_source_destroy(void *data)
 	auto s = (ndi_source_t *)data;
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] +ndi_source_destroy('%s'...)", name);
+
+	ptz_presets_source_deleted(s->obs_source);
 
 	signal_handler_disconnect(obs_source_get_signal_handler(s->obs_source),
 				  "rename", ndi_source_renamed, s);
