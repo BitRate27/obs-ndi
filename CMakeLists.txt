@@ -52,12 +52,14 @@ target_sources(
           src/premultiplied-alpha-filter.cpp
           src/main-output.cpp
           src/preview-output.cpp
+          src/ptz-presets-dock.cpp
           src/Config.cpp
           src/forms/output-settings.cpp
           src/ptz-controller.cpp
           src/ptz-controller.h
           src/main-output.h
           src/preview-output.h
+          src/ptz-presets-dock.h
           src/Config.h
           src/forms/output-settings.h)
 
