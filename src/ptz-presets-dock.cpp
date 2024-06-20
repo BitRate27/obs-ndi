@@ -147,7 +147,7 @@ void ptz_presets_hotkey_function(void* priv, obs_hotkey_id id, obs_hotkey_t* hot
 	(void)id;
 	(void)hotkey;
 	(void)pressed;
-	
+
 	if (pressed) {
 		PresetButton *button = static_cast<PresetButton*>(priv);
         ptz_preset_button_pressed(button->index);
@@ -160,10 +160,10 @@ void ptz_presets_set_ndiname_recv_map(std::string ndi_name,
 				      NDIlib_recv_instance_t recv) 
 {
 
-	//if (context->ndiLib->recv_ptz_is_supported(recv)) {
+	if (context->ndiLib->recv_ptz_is_supported(recv)) {
 		ndi_recv_map.set(ndi_name,recv);
 		ptz_presets_set_dock_context(context);
-	//}
+	}
 }
 void ptz_presets_set_source_ndiname_map(obs_source_t *source,
 				      std::string ndi_name)
