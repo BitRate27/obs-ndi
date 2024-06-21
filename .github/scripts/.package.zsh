@@ -171,7 +171,7 @@ ${_usage_host:-}"
 
     local output_name="${product_name}-${product_version}-${host_os}-universal"
 
-    if [[ ! -d ${project_root}/build_macos/${config}/${product_name}.plugin ]] {
+    if [[ ! -d ${project_root}/release/${config}/${product_name}.plugin ]] {
       log_error 'No release artifact found. Run the build script or the CMake install procedure first.'
       return 2
     }
@@ -180,7 +180,7 @@ ${_usage_host:-}"
     if (( _loglevel > 1  || ${+CI} )) _tarflags="v${_tarflags}"
 
     if (( package )) {
-      if [[ ! -f ${project_root}/build_macos/${config}/${product_name}.pkg ]] {
+      if [[ ! -f ${project_root}/release/${config}/${product_name}.pkg ]] {
         log_error 'Installer Package not found. Run the build script or the CMake build and install procedures first.'
         return 2
       }
@@ -192,17 +192,17 @@ ${_usage_host:-}"
         read_codesign_installer
         productsign \
           --sign "${CODESIGN_IDENT_INSTALLER}" \
-          ${project_root}/build_macos/${config}/${product_name}.pkg \
-          ${project_root}/build_macos/${output_name}.pkg
+          ${project_root}/release/${config}/${product_name}.pkg \
+          ${project_root}/release/${output_name}.pkg
 
-        rm ${project_root}/build_macos/${config}/${product_name}.pkg
+        rm ${project_root}/release/${config}/${product_name}.pkg
       } else {
-        mv ${project_root}/build_macos/${config}/${product_name}.pkg \
-          ${project_root}/build_macos/${output_name}.pkg
+        mv ${project_root}/release/${config}/${product_name}.pkg \
+          ${project_root}/release/${output_name}.pkg
       }
 
       if (( codesign && notarize )) {
-        if [[ ! -f ${project_root}/build_macos/${output_name}.pkg ]] {
+        if [[ ! -f ${project_root}/release/${output_name}.pkg ]] {
           log_error "No package for notarization found."
           return 2
         }
@@ -210,12 +210,12 @@ ${_usage_host:-}"
         read_codesign_installer
         read_codesign_pass
 
-        xcrun notarytool submit ${project_root}/build_macos/${output_name}.pkg \
+        xcrun notarytool submit ${project_root}/release/${output_name}.pkg \
           --keychain-profile "OBS-Codesign-Password" --wait
 
         local -i _status=0
 
-        xcrun stapler staple ${project_root}/build_macos/${output_name}.pkg || _status=1
+        xcrun stapler staple ${project_root}/release/${output_name}.pkg || _status=1
 
         if (( _status )) {
           log_error "Notarization failed. Use 'xcrun notarytool log <submission ID>' to check for errors."
@@ -225,15 +225,15 @@ ${_usage_host:-}"
       popd
     } else {
       log_group "Archiving ${product_name}..."
-      pushd ${project_root}/build_macos/${config}
-      XZ_OPT=-T0 tar "-${_tarflags}" ${project_root}/build_macos/${output_name}.tar.xz ${product_name}.plugin
+      pushd ${project_root}/release/${config}
+      XZ_OPT=-T0 tar "-${_tarflags}" ${project_root}/release/${output_name}.tar.xz ${product_name}.plugin
       popd
     }
 
-    if [[ ${config} == build_macos ]] {
+    if [[ ${config} == Release ]] {
       log_group "Archiving ${product_name} Debug Symbols..."
-      pushd ${project_root}/build_macos/${config}
-      XZ_OPT=-T0 tar "-${_tarflags}" ${project_root}/build_macos/${output_name}-dSYMs.tar.xz ${product_name}.plugin.dSYM
+      pushd ${project_root}/release/${config}
+      XZ_OPT=-T0 tar "-${_tarflags}" ${project_root}/release/${output_name}-dSYMs.tar.xz ${product_name}.plugin.dSYM
       popd
     }
 
@@ -258,8 +258,8 @@ ${_usage_host:-}"
       local _tarflags='cJf'
       if (( _loglevel > 1 || ${+CI} )) _tarflags="v${_tarflags}"
 
-      pushd ${project_root}/build_macos/${config}
-      XZ_OPT=-T0 tar "-${_tarflags}" ${project_root}/build_macos/${output_name}.tar.xz (lib|share)
+      pushd ${project_root}/release/${config}
+      XZ_OPT=-T0 tar "-${_tarflags}" ${project_root}/release/${output_name}.tar.xz (lib|share)
       popd
     }
     log_group
