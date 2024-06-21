@@ -30,6 +30,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "plugin-main.h"
 #include "Config.h"
+#include "ptz-preview.h"
 #include "ptz-presets-dock.h"
 #include "ptz-controller.h"
 
@@ -594,9 +595,9 @@ void *ndi_source_thread(void *data)
 				     recv_desc.source_to_connect_to.p_ndi_name);
 				break;
 			}
-			ptz_presets_set_source_ndiname_map(obs_source,
+			ptz_preview_set_source_ndiname_map(obs_source,
 				recv_desc.source_to_connect_to.p_ndi_name);
-			ptz_presets_set_ndiname_recv_map(
+			ptz_preview_set_ndiname_recv_map(
 				recv_desc.source_to_connect_to.p_ndi_name,
 				ndi_receiver);
 			
@@ -768,11 +769,11 @@ void *ndi_source_thread(void *data)
 			}
 
 			if (frame_received == NDIlib_frame_type_status_change) {
-				ptz_presets_set_ndiname_recv_map(
+				ptz_preview_set_ndiname_recv_map(
 					recv_desc.source_to_connect_to
 						.p_ndi_name,
 					ndi_receiver);
-				ptz_presets_set_source_ndiname_map(
+				ptz_preview_set_source_ndiname_map(
 					obs_source,
 					recv_desc.source_to_connect_to
 						.p_ndi_name);
@@ -985,7 +986,7 @@ void ndi_source_update(void *data, obs_data_t *settings)
 
 	config.ndi_source_name = obs_data_get_string(settings, PROP_SOURCE);
 	config.bandwidth = (int)obs_data_get_int(settings, PROP_BANDWIDTH);
-	ptz_presets_set_source_ndiname_map(obs_source,
+	ptz_preview_set_source_ndiname_map(obs_source,
 					   config.ndi_source_name.data());
 
 	const char *behavior = obs_data_get_string(settings, PROP_BEHAVIOR);
@@ -1075,7 +1076,7 @@ void ndi_source_shown(void *data)
 	blog(LOG_INFO, "[obs-ndi] ndi_source_shown('%s'...)", name);
 	s->config.tally.on_preview = (Config::Current())->TallyPreviewEnabled;
 
-	ptz_presets_set_source_ndiname_map(s->obs_source, s->config.ndi_source_name.data());
+	ptz_preview_set_source_ndiname_map(s->obs_source, s->config.ndi_source_name.data());
 }
 
 void ndi_source_hidden(void *data)
@@ -1148,7 +1149,7 @@ void ndi_source_destroy(void *data)
 	auto name = obs_source_get_name(s->obs_source);
 	blog(LOG_INFO, "[obs-ndi] +ndi_source_destroy('%s'...)", name);
 
-	ptz_presets_source_deleted(s->obs_source);
+	ptz_preview_source_deleted(s->obs_source);
 
 	signal_handler_disconnect(obs_source_get_signal_handler(s->obs_source),
 				  "rename", ndi_source_renamed, s);

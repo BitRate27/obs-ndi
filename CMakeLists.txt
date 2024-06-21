@@ -53,6 +53,7 @@ target_sources(
           src/main-output.cpp
           src/preview-output.cpp
           src/ptz-presets-dock.cpp
+          src/ptz-preview.cpp
           src/Config.cpp
           src/forms/output-settings.cpp
           src/ptz-controller.cpp
@@ -60,6 +61,7 @@ target_sources(
           src/main-output.h
           src/preview-output.h
           src/ptz-presets-dock.h
+          src/ptz-preview.h
           src/Config.h
           src/forms/output-settings.h)
 
