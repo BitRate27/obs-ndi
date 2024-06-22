@@ -3,6 +3,7 @@
 #include "../lib/visca27/ViscaAPI.h"
 #include <pthread.h>
 #include <string>
+#include <qwidget.h>
 typedef struct {
 	obs_source_t *obs_source;
 	NDIlib_recv_instance_t ndi_recv;
@@ -23,8 +24,11 @@ typedef struct {
 	bool drag_start;
 	char ip[100];
 	ViscaAPI visca;
+	QWidget *dialog;
 } ptz_controller_t;
-ptz_controller_t *ptz_controller_init(const NDIlib_v4 *, obs_source_t *);
+ptz_controller_t *ptz_controller_init(const NDIlib_v4 *ndiLib,
+				      obs_source_t *obs_source);
+void ptz_controller_update();
 void ptz_controller_set_recv(ptz_controller_t *,NDIlib_recv_instance_t);
 void ptz_controller_set_wheel(ptz_controller_t *, int, int);
 void ptz_controller_mouse_click(ptz_controller_t *s, bool mouse_up, int x, int y);

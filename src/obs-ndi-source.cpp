@@ -582,7 +582,9 @@ void *ndi_source_thread(void *data)
 			     obs_source_ndi_receiver_name);
 #endif
 			ndi_receiver = ndiLib->recv_create_v3(&recv_desc);
-
+			ptz_controller_set_recv(
+				config_most_recent.ptz.ptz_controller_context,
+				ndi_receiver);
 #if 1
 			blog(LOG_INFO,
 			     "[obs-ndi] ndi_source_thread: '%s' -ndi_receiver = ndiLib->recv_create_v3(&recv_desc)",

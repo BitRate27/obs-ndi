@@ -12,6 +12,7 @@
 #include <thread>
 #include <qlineedit.h>
 #include "ptz-presets-dock.h"
+#include "ptz-controller.h"
 
 struct ptz_preview {
 	const NDIlib_v4 *ndiLib;
