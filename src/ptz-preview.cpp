@@ -11,17 +11,29 @@
 #include <qpushbutton.h>
 #include <thread>
 #include <qlineedit.h>
+#include "ptz-preview.h"
 #include "ptz-presets-dock.h"
 #include "ptz-controller.h"
+#include <regex>
 
-struct ptz_preview {
-	const NDIlib_v4 *ndiLib;
-	NDIlib_recv_instance_t current_recv;
-	obs_source_t *current_source;
+struct recv_info_t {
+	NDIlib_recv_instance_t recv;
 	std::string ndi_name;
+	ViscaAPI visca;
+	char ip[100];
+	int port;
 };
 
-static struct ptz_preview *context;
+
+typedef struct {
+	obs_source_t *source;
+	NDIlib_recv_instance_t recv;
+	std::string ndi_name;
+	ViscaAPI visca;
+} ptz_preview; // current preview context
+
+static ptz_preview _current;
+static const NDIlib_v4 *_ndiLib;
 
 template<typename K, typename V> class MapWrapper {
 public:
@@ -48,39 +60,69 @@ public:
 	void remove(const K &key) { map_.erase(key); }
 	void clear() { map_.clear(); }
 	int size() { return (int)map_.size(); };
+	V getOrCreate(const K &key) const { return map_[key]; };
 
 private:
 	std::map<K, V> map_;
 };
 
-static MapWrapper<std::string, NDIlib_recv_instance_t> ndi_recv_map;
+static MapWrapper<std::string, recv_info_t> ndi_recv_map;
 static MapWrapper<obs_source_t *, std::string> source_ndi_map;
+void ptz_preview_set_current();
 
-void ptz_preview_set_context(struct ptz_preview *ctx);
-
-void ptz_preview_set_ndiname_recv_map(std::string ndi_name,
-				      NDIlib_recv_instance_t recv) 
+std::string extractIPAddress(const std::string &str)
 {
+	std::regex ipRegex(
+		"(\\b(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\."
+		"(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\b)");
+	std::smatch match;
+	if (std::regex_search(str, match, ipRegex)) {
+		return match.str();
+	}
+	return "";
+}
+void ptz_preview_set_ndiname_recv_map(std::string ndi_name,
+				      NDIlib_recv_instance_t recv) {
+	//if (_ndiLib->recv_ptz_is_supported(recv)) 
+	{
 
-	//if (context->ndiLib->recv_ptz_is_supported(recv)) {
-		ndi_recv_map.set(ndi_name,recv);
-		ptz_preview_set_context(context);
-	//}
+		recv_info_t recv_info = ndi_recv_map.get(ndi_name);
+
+		recv_info.recv = recv;
+		const char *p_url = _ndiLib->recv_get_web_control(recv);
+		if (p_url) {
+			blog(LOG_INFO,
+			     "[obs-ndi] ptz_controller_set_recv url=%s", p_url);
+			sprintf_s(recv_info.ip, 100, "%s",
+				  extractIPAddress(std::string(p_url)).c_str());
+			_ndiLib->recv_free_string(recv, p_url);
+		} else {
+			sprintf_s(recv_info.ip, 100, "127.0.0.1");
+		}
+		recv_info.visca.connectCamera(std::string(recv_info.ip),
+					      5678);
+		
+		ndi_recv_map.set(ndi_name, recv_info);
+
+		blog(LOG_INFO, "[obs-ndi] ptz_controller_set_recv ip=%s",
+		     recv_info.ip);
+	}
 }
 void ptz_preview_set_source_ndiname_map(obs_source_t *source,
-				      std::string ndi_name)
+					std::string ndi_name)
 {
-	source_ndi_map.set(source,ndi_name);
+	source_ndi_map.set(source, ndi_name);
 }
 
 void ptz_preview_source_deleted(obs_source_t *source){
-	source_ndi_map.remove(source);
-	if (context->current_source == source) {
-		context->current_source = nullptr;
-		context->current_recv = nullptr;
-		context->ndi_name = obs_module_text(
-			"NDIPlugin.PTZPresetsDock.NotSupported");
+
+	if (_current.source == source) {
+		_current.source = nullptr;
+		_current.ndi_name = "";
+
+		_current.visca.disconnectCamera();
 	}
+	source_ndi_map.remove(source);
 };
 
 bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
@@ -94,8 +136,8 @@ bool EnumerateSceneItems(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
 		reinterpret_cast<std::vector<std::string> *>(param);
 
 	auto ndi_name = source_ndi_map.get(source);
-	auto recv = ndi_recv_map.get(ndi_name);
-	if (recv != nullptr)
+	auto recv_info = ndi_recv_map.get(ndi_name);
+	if (recv_info.recv != nullptr)
 		names->push_back(ndi_name);
 
 	return true;
@@ -107,7 +149,7 @@ void CreateListOfNDINames(obs_scene_t *scene,
 	obs_scene_enum_items(scene, EnumerateSceneItems, &names);
 }
 
-void ptz_preview_set_context(struct ptz_preview *ctx) 
+void ptz_preview_set_current() 
 {
 	obs_source_t *preview_source =
 		obs_frontend_get_current_preview_scene();
@@ -119,9 +161,9 @@ void ptz_preview_set_context(struct ptz_preview *ctx)
 	CreateListOfNDINames(preview_scene, preview_ndinames);
 	
 	if ((preview_source != nullptr) && (preview_ndinames.size() == 0)) {
-		ctx->current_recv = nullptr;
-		ctx->current_source = nullptr;
-		ctx->ndi_name = obs_module_text(
+		_current.recv = nullptr;
+		_current.source = nullptr;
+		_current.ndi_name = obs_module_text(
 			"NDIPlugin.PTZPresetsDock.NotSupported");
 		return;
 	}
@@ -139,9 +181,9 @@ void ptz_preview_set_context(struct ptz_preview *ctx)
 			auto it = std::find(program_ndinames.begin(),
 					    program_ndinames.end(), name);
 			if (it != program_ndinames.end()) {
-				ctx->current_recv = nullptr;
-				ctx->current_source = nullptr;
-				ctx->ndi_name = obs_module_text(
+				_current.recv = nullptr;
+				_current.source = nullptr;
+				_current.ndi_name = obs_module_text(
 					"NDIPlugin.PTZPresetsDock.OnProgram");
 				return;
 			}
@@ -153,16 +195,18 @@ void ptz_preview_set_context(struct ptz_preview *ctx)
 	// source if has ptz support.
 	std::string ndi_name = (preview_ndinames.size() > 0) ? preview_ndinames[0] : 
 		(program_ndinames.size() > 0) ? program_ndinames[0] : "";
-	ctx->current_recv = ndi_recv_map.get(ndi_name);
+	_current.recv = ndi_recv_map.get(ndi_name).recv;
 
-	if (ctx->current_recv != nullptr) {
-		ctx->ndi_name = ndi_name;		
-		ctx->current_source = source_ndi_map.reverseLookup(ndi_name);
+	if (_current.recv != nullptr) {
+		_current.ndi_name = ndi_name;		
+		_current.source = source_ndi_map.reverseLookup(ndi_name);
+		recv_info_t recv_info = ndi_recv_map.get(ndi_name);
+		_current.visca = recv_info.visca;
 	}
 	else {
-		ctx->ndi_name = obs_module_text(
+		_current.ndi_name = obs_module_text(
 			"NDIPlugin.PTZPresetsDock.NotSupported");
-		ctx->current_source = nullptr;
+		_current.source = nullptr;
 	}
 }
 
@@ -172,8 +216,9 @@ void ptz_on_scene_changed(enum obs_frontend_event event, void *param)
 	auto ctx = (struct ptz_preview *)param;
 	switch (event) {
 	case OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED: {
-		ptz_preview_set_context(ctx);
+		ptz_preview_set_current();
 		ptz_presets_update();
+		ptz_controller_update();
 		break;
 	}
 	default:
@@ -181,22 +226,35 @@ void ptz_on_scene_changed(enum obs_frontend_event event, void *param)
 	}
 }
 
-std::string ptz_preview_get_ndiname() { return context->ndi_name; };
-obs_source_t* ptz_preview_get_source() { return context->current_source; };
-NDIlib_v4* ptz_preview_get_ndilib() { return (NDIlib_v4*)context->ndiLib; };
-NDIlib_recv_instance_t ptz_preview_get_recv() { return context->current_recv; };
+std::string ptz_preview_get_ndiname()
+{
+	return _current.ndi_name;
+};
+obs_source_t *ptz_preview_get_source()
+{ 
+	return _current.source;
+};
+NDIlib_v4* ptz_preview_get_ndilib() 
+{ 
+	return (NDIlib_v4*)_ndiLib; 
+};
+NDIlib_recv_instance_t ptz_preview_get_recv()
+{
+	return _current.recv;
+};
+ViscaAPI ptz_preview_get_visca_connection() 
+{
+	return _current.visca;
+};
 
 void ptz_preview_init(const NDIlib_v4 *ndiLib)
 {
-	if (context) return;
-
-	context = (ptz_preview *)bzalloc(sizeof(ptz_preview));
-	context->ndiLib = ndiLib;
-	context->current_recv = nullptr;
-	context->current_source = nullptr;
-	context->ndi_name = obs_module_text(
-		"NDIPlugin.PTZPresetsDock.NotSupported");
-	obs_frontend_add_event_callback(ptz_on_scene_changed,
-									context);
+	_ndiLib = ndiLib;
+	_current.source = nullptr;
+	_current.recv = nullptr;
+	_current.visca = ViscaAPI();
+	_current.ndi_name = "";
+	obs_frontend_add_event_callback(ptz_on_scene_changed, &_current);
 	ptz_presets_init();
+	ptz_controller_init();
 }
